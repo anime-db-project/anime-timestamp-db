@@ -7,6 +7,10 @@ from pathlib import Path
 
 from anime_timestamp_db.config import BAHA, SKIPDB
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
+from anime_timestamp_db.mapping_identity import (
+    AnchorResolutionConflict,
+    MappingAnchorIndex,
+)
 from anime_timestamp_db.skipdb_mapping import EpisodeResolution, SkipDBMappingIndex
 
 _SKIPDB_TYPES = {
@@ -19,7 +23,6 @@ _BAHA_TYPES = {
     "OP": "opening",
     "ED": "ending",
 }
-_PROVIDER_PRIORITY = {"mal": 0, "anilist": 1, "anidb": 2}
 
 
 @dataclass(slots=True)
@@ -90,8 +93,8 @@ def _resolution_metadata(resolution: EpisodeResolution | None) -> dict[str, obje
         "mapping_method": resolution.method,
         "mapping_confidence": resolution.confidence,
         "mapping_routes": list(resolution.routes),
-        "target_ids": dict(sorted(resolution.ids.items())),
         "target_episode": resolution.episode_number,
+        "target_provider_count": len(resolution.ids),
     }
 
 
@@ -101,6 +104,7 @@ def import_skipdb(
     writer: DatabaseWriter,
     snapshot_id: int,
     mappings: SkipDBMappingIndex,
+    identities: MappingAnchorIndex,
 ) -> ImportStats:
     stats = ImportStats(source=SKIPDB.key)
     source_id = writer.source_id(SKIPDB)
@@ -194,8 +198,7 @@ def import_skipdb(
 
         normalization_status = "unprocessed"
         normalization_reason = ""
-        normalized_provider = ""
-        normalized_id = ""
+        normalized_anchor_id: int | None = None
         normalized_episode_key = ""
         runtime_episode_id: int | None = None
 
@@ -204,78 +207,74 @@ def import_skipdb(
             normalization_reason = "missing identifier/type or invalid timestamp range"
             stats.invalid += 1
         elif resolution is not None:
-            canonical_provider = min(
-                resolution.ids,
-                key=lambda provider: _PROVIDER_PRIORITY.get(provider, 99),
-            )
-            normalization_status = (
-                "mapped-inferred"
-                if resolution.method == "inferred-season-offset"
-                else "mapped"
-            )
-            normalization_reason = resolution.method
-            normalized_provider = canonical_provider
-            normalized_id = resolution.ids[canonical_provider]
-            normalized_episode_key = resolution.episode_key
-            stats.mapped += 1
+            try:
+                normalized_anchor_id = identities.anchor_for_ids(resolution.ids)
+            except AnchorResolutionConflict as exc:
+                normalization_status = "ambiguous"
+                normalization_reason = str(exc)
+                stats.ambiguous += 1
+            else:
+                if normalized_anchor_id is None:
+                    normalization_status = "source-only"
+                    normalization_reason = "resolved episode has no AMDB title anchor"
+                    stats.unmapped += 1
+                else:
+                    normalization_status = (
+                        "mapped-inferred"
+                        if resolution.method == "inferred-season-offset"
+                        else "mapped"
+                    )
+                    normalization_reason = resolution.method
+                    normalized_episode_key = resolution.episode_key
+                    stats.mapped += 1
 
-            if status == "approved":
-                try:
-                    anchor_provider = min(
-                        resolution.ids,
-                        key=lambda provider: _PROVIDER_PRIORITY.get(provider, 99),
-                    )
-                    anchor_ids = {anchor_provider: resolution.ids[anchor_provider]}
-                    title_id = writer.get_or_create_title(
-                        anchor_ids,
-                        display_title=display_title,
-                    )
-                    runtime_episode_id = writer.get_or_create_episode(
-                        title_id,
-                        episode_key=resolution.episode_key,
-                        episode_number=resolution.episode_number,
-                        is_special=resolution.is_special,
-                    )
-                    writer.add_episode_ref(
-                        source_id,
-                        source_title_key=source_title_key,
-                        source_episode_key=source_episode_key,
-                        episode_id=runtime_episode_id,
-                        source_episode_number_text=(
-                            "" if episode is None else str(episode)
-                        ),
-                    )
-                    for target in resolution.provider_episodes:
-                        belongs = writer.conn.execute(
-                            """
-                            SELECT title_id FROM title_ids
-                            WHERE provider=? AND external_id=?
-                            """,
-                            (
-                                target.descriptor.provider,
-                                target.descriptor.external_id,
-                            ),
-                        ).fetchone()
-                        if belongs is None or int(belongs[0]) != title_id:
-                            continue
+                    if status == "approved":
                         try:
-                            writer.add_episode_id(
-                                episode_id=runtime_episode_id,
-                                provider=target.descriptor.provider,
-                                title_external_id=target.descriptor.external_id,
-                                scope=target.descriptor.scope or "",
-                                episode_number=target.episode_number,
+                            writer.get_or_create_title(
+                                normalized_anchor_id,
+                                display_title=display_title,
                             )
-                        except IdentityConflict:
-                            continue
-                except IdentityConflict as exc:
-                    normalization_status = "ambiguous"
-                    normalization_reason = str(exc)
-                    normalized_provider = ""
-                    normalized_id = ""
-                    normalized_episode_key = ""
-                    runtime_episode_id = None
-                    stats.ambiguous += 1
+                            runtime_episode_id = writer.get_or_create_episode(
+                                normalized_anchor_id,
+                                episode_key=resolution.episode_key,
+                                episode_number=resolution.episode_number,
+                                is_special=resolution.is_special,
+                            )
+                            writer.add_episode_ref(
+                                source_id,
+                                source_title_key=source_title_key,
+                                source_episode_key=source_episode_key,
+                                episode_id=runtime_episode_id,
+                                source_episode_number_text=(
+                                    "" if episode is None else str(episode)
+                                ),
+                            )
+                            for target in resolution.provider_episodes:
+                                if (
+                                    identities.anchor_for(
+                                        target.descriptor.provider,
+                                        target.descriptor.external_id,
+                                    )
+                                    != normalized_anchor_id
+                                ):
+                                    continue
+                                try:
+                                    writer.add_episode_id(
+                                        episode_id=runtime_episode_id,
+                                        anchor_id=normalized_anchor_id,
+                                        provider=target.descriptor.provider,
+                                        scope=target.descriptor.scope or "",
+                                        episode_number=target.episode_number,
+                                    )
+                                except IdentityConflict:
+                                    continue
+                        except IdentityConflict as exc:
+                            normalization_status = "ambiguous"
+                            normalization_reason = str(exc)
+                            normalized_anchor_id = None
+                            normalized_episode_key = ""
+                            runtime_episode_id = None
+                            stats.ambiguous += 1
         elif imdb_id in anime_imdb_ids:
             normalization_status = "source-only"
             normalization_reason = (
@@ -287,15 +286,22 @@ def import_skipdb(
             normalization_reason = "no anime identity in mappings.db"
             stats.unmapped += 1
 
+        candidate_counts = (
+            {
+                "mal": len(title_candidates.mal),
+                "anilist": len(title_candidates.anilist),
+                "anidb": len(title_candidates.anidb),
+            }
+            if title_candidates is not None
+            else {}
+        )
         metadata = {
             "media_type": media_type,
             "season": season,
             "episode": episode,
             "title": display_title,
             "created_at": str(raw.get("created_at") or ""),
-            "anime_title_candidates": (
-                title_candidates.as_dict() if title_candidates is not None else {}
-            ),
+            "anime_candidate_counts": candidate_counts,
             "anime_detected_by_episode_bridge": imdb_id in bridge_anime_imdb_ids,
             **_resolution_metadata(resolution),
         }
@@ -312,8 +318,7 @@ def import_skipdb(
             payload_sha256=digest,
             normalization_status=normalization_status,
             normalization_reason=normalization_reason,
-            normalized_provider=normalized_provider,
-            normalized_id=normalized_id,
+            normalized_anchor_id=normalized_anchor_id,
             normalized_episode_key=normalized_episode_key,
             metadata=metadata,
         )
