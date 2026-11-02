@@ -137,7 +137,7 @@ Counts are snapshot-dependent. The authoritative numbers for an artifact are alw
 
 ## Size impact of schema v5
 
-Compared with the immediately preceding validated schema-v4 artifact built from the same project generation, the schema-v5 validation build reduced artifact sizes to:
+Compared with the preceding successful schema-v4 artifact from the same day, the schema-v5 validation build reduced artifact sizes to:
 
 | Artifact | v4 | v5 | Reduction |
 | --- | ---: | ---: | ---: |
@@ -174,7 +174,7 @@ Normal push, scheduled, and manual database builds use short-lived GitHub Action
 
 A successful database build uploads the runtime/evidence databases, compressed variants, manifest, audit, checksums, and source-specific license/notice files.
 
-The project does **not** upload custom source-code ZIP/Zstd/7z bundles. GitHub already provides its standard `Source code (zip)` and `Source code (tar.gz)` archives for Releases automatically. citeturn0search1
+The project does **not** upload custom source-code ZIP/Zstd/7z bundles. GitHub already provides its standard `Source code (zip)` and `Source code (tar.gz)` archives for Releases automatically.
 
 ## Local build
 
