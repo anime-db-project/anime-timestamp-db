@@ -8,9 +8,11 @@ from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
+from _mapping_fixture import create_mapping_db
 from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.config import OPEN_ANIME_TIMESTAMPS
 from anime_timestamp_db.database import DatabaseWriter
+from anime_timestamp_db.mapping_identity import MappingAnchorIndex
 from anime_timestamp_db.open_anime_timestamps_importer import (
     import_open_anime_timestamps,
 )
@@ -56,9 +58,22 @@ class OpenAnimeTimestampsTests(unittest.TestCase):
                     }
                 }
             )
+            mapping_db = root / "mappings.db"
+            create_mapping_db(
+                mapping_db,
+                nodes=[
+                    (1, "anidb", "1"),
+                    (2, "mal", "10"),
+                    (3, "anilist", "20"),
+                ],
+                anchors={8001: [1, 2, 3]},
+            )
             runtime = root / "runtime.db"
             evidence = root / "evidence.db"
-            with DatabaseWriter(runtime, evidence) as writer:
+            with (
+                MappingAnchorIndex(mapping_db) as identities,
+                DatabaseWriter(runtime, evidence) as writer,
+            ):
                 snapshot = writer.add_snapshot(
                     OPEN_ANIME_TIMESTAMPS,
                     SimpleNamespace(
@@ -76,6 +91,7 @@ class OpenAnimeTimestampsTests(unittest.TestCase):
                     writer=writer,
                     snapshot_id=snapshot,
                     anibridge=bridge,
+                    identities=identities,
                 )
                 self.assertEqual(stats.records, 2)
                 self.assertEqual(stats.runtime_segments, 5)
@@ -85,14 +101,12 @@ class OpenAnimeTimestampsTests(unittest.TestCase):
 
             with closing(sqlite3.connect(runtime)) as conn:
                 self.assertEqual(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM title_ids WHERE provider='anidb' AND external_id='1'"
-                    ).fetchone()[0],
-                    1,
+                    conn.execute("SELECT anchor_id FROM titles").fetchone()[0],
+                    8001,
                 )
                 self.assertEqual(
                     conn.execute(
-                        "SELECT COUNT(*) FROM episode_ids WHERE provider='anidb' AND scope='R'"
+                        "SELECT COUNT(*) FROM episode_ids WHERE provider='anidb' AND scope='R' AND anchor_id=8001"
                     ).fetchone()[0],
                     2,
                 )
@@ -100,6 +114,16 @@ class OpenAnimeTimestampsTests(unittest.TestCase):
                     "SELECT consensus_eligible, COUNT(*) FROM segments GROUP BY consensus_eligible ORDER BY consensus_eligible"
                 ).fetchall()
                 self.assertEqual(eligibility, [(0, 3), (1, 2)])
+            with closing(sqlite3.connect(evidence)) as conn:
+                self.assertEqual(
+                    {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT normalized_anchor_id FROM records WHERE normalized_anchor_id IS NOT NULL"
+                        )
+                    },
+                    {8001},
+                )
 
 
 if __name__ == "__main__":
