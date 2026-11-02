@@ -97,7 +97,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq p7zip-full
+          sudo apt-get install -y -qq p7zip-full zstd
           tag="${{ steps.meta.outputs.tag }}"
           prefix="anime-timestamp-db-${tag}"
           zip="artifacts/${prefix}-source.zip"
