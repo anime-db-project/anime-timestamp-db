@@ -16,7 +16,12 @@ def create_mapping_db(
     conflicts: Iterable[tuple[int, str, list[str], str]] = (),
 ) -> None:
     nodes = list(nodes)
-    anchors = anchors or {}
+    edges = list(edges)
+    conflicts = list(conflicts)
+    normalized_anchors = {
+        int(anchor_id): [int(node_id) for node_id in node_ids]
+        for anchor_id, node_ids in (anchors or {}).items()
+    }
     with closing(sqlite3.connect(path)) as conn:
         conn.executescript(
             """
@@ -73,8 +78,11 @@ def create_mapping_db(
                 ("anchor_schema_version", "1"),
                 ("anchor_namespace", "amdb"),
                 ("anchor_format", "amdb:<integer>"),
-                ("anchor_entities", str(len(anchors))),
-                ("anchor_nodes", str(sum(len(list(v)) for v in anchors.values()))),
+                ("anchor_entities", str(len(normalized_anchors))),
+                (
+                    "anchor_nodes",
+                    str(sum(len(node_ids) for node_ids in normalized_anchors.values())),
+                ),
             ),
         )
         conn.executemany(
@@ -101,7 +109,7 @@ def create_mapping_db(
                 (source, provider, json.dumps(candidate_ids), reason),
             )
         for entity_id, (anchor_id, node_ids) in enumerate(
-            sorted(anchors.items()), start=1
+            sorted(normalized_anchors.items()), start=1
         ):
             conn.execute(
                 "INSERT INTO entities(entity_id, anchor_id) VALUES (?, ?)",
@@ -109,6 +117,6 @@ def create_mapping_db(
             )
             conn.executemany(
                 "INSERT INTO entity_nodes(entity_id, node_id) VALUES (?, ?)",
-                ((entity_id, int(node_id)) for node_id in node_ids),
+                ((entity_id, node_id) for node_id in node_ids),
             )
         conn.commit()
