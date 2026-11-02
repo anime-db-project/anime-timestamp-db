@@ -88,42 +88,7 @@ jobs:
             > artifacts/audit.json
           cat artifacts/audit.json
 
-      - name: Verify database asset checksums
-        if: steps.existing.outputs.exists != 'true'
-        run: cd artifacts && sha256sum --check SHA256SUMS
-
-      - name: Package source archives
-        if: steps.existing.outputs.exists != 'true'
-        shell: bash
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq p7zip-full zstd
-          tag="${{ steps.meta.outputs.tag }}"
-          prefix="anime-timestamp-db-${tag}"
-          zip="artifacts/zz-${prefix}-source.zip"
-          zst="artifacts/zz-${prefix}-source.tar.zst"
-          seven="artifacts/zz-${prefix}-source.7z"
-
-          git archive --format=zip --prefix="${prefix}/" -o "$zip" "$GITHUB_SHA"
-          git archive --format=tar --prefix="${prefix}/" "$GITHUB_SHA" \
-            | zstd -T0 -19 -o "$zst"
-
-          stage="$(mktemp -d)"
-          git archive --format=tar --prefix="${prefix}/" "$GITHUB_SHA" \
-            | tar -xf - -C "$stage"
-          (
-            cd "$stage"
-            7z a -t7z -mx=9 "$GITHUB_WORKSPACE/$seven" "$prefix" >/dev/null
-          )
-          rm -rf "$stage"
-
-          {
-            sha256sum "$zip" | sed 's#  artifacts/#  #'
-            sha256sum "$zst" | sed 's#  artifacts/#  #'
-            sha256sum "$seven" | sed 's#  artifacts/#  #'
-          } >> artifacts/SHA256SUMS
-
-      - name: Verify complete release checksums
+      - name: Verify release checksums
         if: steps.existing.outputs.exists != 'true'
         run: cd artifacts && sha256sum --check SHA256SUMS
 
@@ -134,28 +99,12 @@ jobs:
         shell: bash
         run: |
           tag="${{ steps.meta.outputs.tag }}"
-          mapfile -t base_assets < <(
-            find artifacts -maxdepth 1 -type f \
-              ! -name 'zz-*-source.zip' \
-              ! -name 'zz-*-source.tar.zst' \
-              ! -name 'zz-*-source.7z' \
-              -print | sort
-          )
-
-          # GitHub sorts the visible asset list by name. The zz- prefix is
-          # deliberate: source bundles stay at the bottom, after database assets.
-          gh release create "$tag" "${base_assets[@]}" \
+          mapfile -t assets < <(find artifacts -maxdepth 1 -type f -print | sort)
+          gh release create "$tag" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
-            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published above the explicit source archives."
-
-          gh release upload "$tag" \
-            artifacts/zz-*-source.zip \
-            artifacts/zz-*-source.tar.zst \
-            artifacts/zz-*-source.7z \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published as release assets. GitHub provides the repository source-code archives automatically."
 
       - name: Existing release
         if: steps.existing.outputs.exists == 'true'
