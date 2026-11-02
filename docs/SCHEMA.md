@@ -95,7 +95,7 @@ These source-native keys are retained because they are provenance, not cross-pro
 Approved observations normalized to an AMDB title and concrete episode. Each row stores:
 
 - source and lineage;
-- stable source segment ID;
+- compact stable source segment ID;
 - segment type;
 - integer millisecond start/end;
 - optional media duration;
@@ -138,7 +138,7 @@ normalized_episode_key
 
 `normalized_anchor_id` replaces the v4 pair of normalized provider + normalized provider title ID.
 
-Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.
+Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot. Full per-record SHA-256 digests are stored as 32-byte BLOBs rather than 64-character hex text; synthetic AniSkip/SkipDB record IDs retain a source prefix plus a 128-bit digest token while the full digest remains available in evidence.
 
 ### `record_segments`
 

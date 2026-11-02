@@ -137,7 +137,7 @@ def import_aniskip(
                 provider_name = str(raw.get("provider_name") or "").strip()
                 raw_votes = _safe_int(raw.get("votes")) or 0
                 submitted_at = str(raw.get("submit_date") or "").strip()
-                base_segment_id = digest
+                base_segment_id = digest[:32]
                 created_at = submitted_at
                 updated_at = ""
             else:
@@ -149,7 +149,7 @@ def import_aniskip(
                 submitted_at = ""
                 external_id = str(raw.get("external_id") or "").strip()
                 row_id = str(raw.get("id") or index).strip()
-                base_segment_id = external_id or row_id or digest
+                base_segment_id = external_id or row_id or digest[:32]
                 created_at = str(raw.get("created_at") or "").strip()
                 updated_at = str(raw.get("updated_at") or "").strip()
 

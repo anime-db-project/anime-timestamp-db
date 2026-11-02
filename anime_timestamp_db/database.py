@@ -24,6 +24,22 @@ def _json(value: object) -> str:
     )
 
 
+def _sha256_blob(value: str | bytes) -> bytes:
+    if isinstance(value, bytes):
+        digest = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return b""
+        try:
+            digest = bytes.fromhex(text)
+        except ValueError as exc:
+            raise ValueError("payload_sha256 must be hexadecimal SHA-256") from exc
+    if len(digest) not in (0, 32):
+        raise ValueError("payload_sha256 must contain exactly 32 bytes")
+    return digest
+
+
 def _prepare_path(path: Path, *, overwrite: bool) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +298,7 @@ class DatabaseWriter:
         quality_score: float | None = None,
         votes_up: int = 0,
         votes_down: int = 0,
-        payload_sha256: str = "",
+        payload_sha256: str | bytes = b"",
         normalization_status: str = "unprocessed",
         normalization_reason: str = "",
         normalized_anchor_id: int | None = None,
@@ -312,7 +328,7 @@ class DatabaseWriter:
                 quality_score,
                 max(0, int(votes_up)),
                 max(0, int(votes_down)),
-                payload_sha256,
+                _sha256_blob(payload_sha256),
                 normalization_status,
                 normalization_reason,
                 anchor,

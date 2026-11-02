@@ -41,7 +41,7 @@ from anime_timestamp_db.schema import (
 )
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 7
+BUILD_FORMAT_VERSION = 8
 
 
 def _sha256(path: Path) -> str:

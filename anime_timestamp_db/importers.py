@@ -142,7 +142,7 @@ def import_skipdb(
             continue
 
         digest = _payload_hash(raw)
-        record_key = f"skipdb:{digest}"
+        record_key = f"skipdb:{digest[:32]}"
         source_segment_id = record_key
         imdb_id = str(raw.get("imdb_id") or "").strip()
         media_type = str(raw.get("media_type") or "").strip().casefold()

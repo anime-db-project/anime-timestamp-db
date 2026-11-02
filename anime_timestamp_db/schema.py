@@ -97,12 +97,8 @@ CREATE TABLE segments (
 
 CREATE INDEX segments_episode_idx
     ON segments(episode_id, segment_type, start_ms, end_ms);
-CREATE INDEX segments_source_idx
-    ON segments(source_id, episode_id, segment_type);
-CREATE INDEX segments_lineage_idx
-    ON segments(lineage_id, episode_id, segment_type);
-CREATE INDEX segments_duration_idx
-    ON segments(episode_id, segment_type, media_duration_ms);
+-- One episode-first index covers resolver and consensus scans. Source,
+-- lineage and duration filters operate on the already-small per-episode row set.
 
 -- Timestamp datasets such as Baha Anime Skip can have accurate ranges but no
 -- reusable cross-database episode identity. Keep those ranges queryable by the
@@ -141,10 +137,8 @@ CREATE TABLE consensus_segments (
     UNIQUE(episode_id, segment_type, cluster_index)
 );
 
-CREATE INDEX consensus_episode_idx
-    ON consensus_segments(episode_id, segment_type, cluster_index);
-CREATE INDEX consensus_duration_idx
-    ON consensus_segments(episode_id, segment_type, media_duration_ms);
+-- UNIQUE(episode_id, segment_type, cluster_index) already provides the
+-- episode-first index used by consensus lookups; do not duplicate it.
 
 CREATE TABLE consensus_members (
     consensus_id INTEGER NOT NULL REFERENCES consensus_segments(id) ON DELETE CASCADE,
@@ -193,7 +187,8 @@ CREATE TABLE records (
     quality_score REAL,
     votes_up INTEGER NOT NULL DEFAULT 0,
     votes_down INTEGER NOT NULL DEFAULT 0,
-    payload_sha256 TEXT NOT NULL DEFAULT '',
+    payload_sha256 BLOB NOT NULL DEFAULT X''
+        CHECK(length(payload_sha256) IN (0, 32)),
     normalization_status TEXT NOT NULL DEFAULT 'unprocessed',
     normalization_reason TEXT NOT NULL DEFAULT '',
     normalized_anchor_id INTEGER CHECK(
@@ -204,9 +199,8 @@ CREATE TABLE records (
     UNIQUE(snapshot_id, record_key, lineage_key)
 );
 
-CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);
-CREATE INDEX records_normalization_idx
-    ON records(normalization_status, snapshot_id);
+-- Evidence is append-only build provenance. With only a handful of snapshots,
+-- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.
 
 CREATE TABLE record_segments (
     record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
