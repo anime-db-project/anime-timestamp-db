@@ -135,21 +135,26 @@ The builder performed **663,497** AMDB identity lookups during the validation bu
 
 Counts are snapshot-dependent. The authoritative numbers for an artifact are always its `manifest.json` and `audit.json`.
 
-## Size impact of schema v5
+## Size impact of schema v5 and compact-v1
 
-Compared with the preceding successful schema-v4 artifact from the same day, the schema-v5 validation build reduced artifact sizes to:
+Schema v5 first removed the duplicated cross-provider title alias layer. Build format v9 now adds a second, independent optimization: the strict staging databases are fully audited first, then losslessly materialized into a read-optimized `compact-v1` distribution layout. The logical schema remains v5.
 
-| Artifact | v4 | v5 | Reduction |
+On the same validated source snapshot:
+
+| Artifact | v5 staging | compact-v1 | Further reduction |
 | --- | ---: | ---: | ---: |
-| `timestamps.db` | 100,433,920 B | 68,227,072 B | **32.07%** |
-| `timestamps.db.zst` | 29,654,953 B | 19,824,575 B | **33.15%** |
-| `timestamps-evidence.db` | 205,631,488 B | 143,065,088 B | **30.43%** |
-| `timestamps-evidence.db.zst` | 39,729,258 B | 32,056,171 B | **19.31%** |
-| GitHub Actions artifact | 148,320,904 B | 110,099,940 B | **25.77%** |
+| `timestamps.db` | 68,227,072 B | 49,557,504 B | **27.36%** |
+| `timestamps.db.zst` | 19,824,575 B | 13,605,427 B | **31.37%** |
+| `timestamps-evidence.db` | 143,065,088 B | 88,813,568 B | **37.92%** |
+| `timestamps-evidence.db.zst` | 32,056,175 B | 26,790,452 B | **16.43%** |
 
-The main savings come from removing the duplicated title alias layer, compacting synthetic AniSkip/SkipDB IDs, storing full evidence SHA-256 digests as 32-byte BLOBs, and removing redundant SQLite indexes whose queries are already covered by episode-first/UNIQUE indexes. `title_ids` disappears completely while runtime lookup plans remain episode-indexed.
+The runtime distribution drops build-only reverse indexes and uniqueness B-trees while preserving resolver-critical episode indexes. `segments`, `source_segments`, and `consensus_segments` keep the same public columns and rows.
 
-The slightly smaller normalized coverage is intentional, not data loss: rows that could not safely converge on one AMDB anchor were retained as source-only observations.
+The evidence distribution dictionary-encodes repeated lineage/status/reason/metadata strings behind a read-only compatibility view named `records`. Existing `SELECT ... FROM records` consumers therefore see the same columns and values, while each repeated value is stored once. `record_segments` remains a normal table with foreign-key validation.
+
+Both the strict staging databases and the final compact distributions must pass SQLite integrity, foreign-key, normalization, and consensus audits. `manifest.json` records the storage profile plus staging and distribution byte sizes.
+
+The slightly smaller normalized coverage versus schema v4 is intentional, not data loss: rows that could not safely converge on one AMDB anchor are retained as source-only observations.
 
 ## Evidence and reproducibility
 

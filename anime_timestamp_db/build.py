@@ -22,6 +22,11 @@ from anime_timestamp_db.config import (
 )
 from anime_timestamp_db.consensus import rebuild_consensus
 from anime_timestamp_db.database import DatabaseWriter
+from anime_timestamp_db.distribution import (
+    STORAGE_PROFILE,
+    compact_evidence_database,
+    compact_runtime_database,
+)
 from anime_timestamp_db.download import DownloadedSource, download_source
 from anime_timestamp_db.episode_index import rebuild_episode_ids
 from anime_timestamp_db.importers import import_baha, import_skipdb
@@ -41,7 +46,7 @@ from anime_timestamp_db.schema import (
 )
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 8
+BUILD_FORMAT_VERSION = 9
 
 
 def _sha256(path: Path) -> str:
@@ -268,11 +273,30 @@ def build_database(
         )
         writer.finalize()
 
-    audit = audit_databases(runtime_path, evidence_path)
-    if not audit["ok"]:
+    staging_audit = audit_databases(runtime_path, evidence_path)
+    if not staging_audit["ok"]:
         raise RuntimeError(
-            f"Built database failed audit: {json.dumps(audit, sort_keys=True)}"
+            "Built staging database failed audit: "
+            f"{json.dumps(staging_audit, sort_keys=True)}"
         )
+
+    staging_sizes = {
+        DEFAULT_RUNTIME_DB_NAME: runtime_path.stat().st_size,
+        DEFAULT_EVIDENCE_DB_NAME: evidence_path.stat().st_size,
+    }
+    compact_runtime_path = output_dir / f".{DEFAULT_RUNTIME_DB_NAME}.compact"
+    compact_evidence_path = output_dir / f".{DEFAULT_EVIDENCE_DB_NAME}.compact"
+    compact_runtime_database(runtime_path, compact_runtime_path)
+    compact_evidence_database(evidence_path, compact_evidence_path)
+    distribution_audit = audit_databases(compact_runtime_path, compact_evidence_path)
+    if not distribution_audit["ok"]:
+        raise RuntimeError(
+            "Compact distribution database failed audit: "
+            f"{json.dumps(distribution_audit, sort_keys=True)}"
+        )
+    compact_runtime_path.replace(runtime_path)
+    compact_evidence_path.replace(evidence_path)
+    audit = distribution_audit
 
     runtime_zst = output_dir / f"{DEFAULT_RUNTIME_DB_NAME}.zst"
     evidence_zst = output_dir / f"{DEFAULT_EVIDENCE_DB_NAME}.zst"
@@ -334,6 +358,15 @@ def build_database(
         "episode_index": episode_index_stats.as_dict(),
         "consensus": consensus_stats,
         "audit": audit,
+        "storage": {
+            "profile": STORAGE_PROFILE,
+            "staging_audit_ok": bool(staging_audit["ok"]),
+            "staging_size_bytes": staging_sizes,
+            "distribution_size_bytes": {
+                DEFAULT_RUNTIME_DB_NAME: runtime_path.stat().st_size,
+                DEFAULT_EVIDENCE_DB_NAME: evidence_path.stat().st_size,
+            },
+        },
         "artifacts": {},
     }
 

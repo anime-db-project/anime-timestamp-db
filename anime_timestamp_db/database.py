@@ -122,9 +122,11 @@ def inspect_database(path: Path) -> dict[str, Any]:
             raise ValueError(
                 f"Unsupported schema version {schema_version!r}; expected {SCHEMA_VERSION}"
             )
-        tables = {
+        relations = {
             str(row[0])
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+            )
         }
         if role == "runtime":
             wanted = (
@@ -145,8 +147,8 @@ def inspect_database(path: Path) -> dict[str, Any]:
             raise ValueError(f"Unknown database role {role!r}")
         counts: dict[str, int] = {}
         for table in wanted:
-            if table not in tables:
-                raise ValueError(f"Missing required table {table!r}")
+            if table not in relations:
+                raise ValueError(f"Missing required relation {table!r}")
             counts[table] = int(
                 conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             )
