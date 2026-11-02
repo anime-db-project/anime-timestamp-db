@@ -6,12 +6,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from anime_timestamp_db.audit import audit_databases
-from anime_timestamp_db.pipeline import build_database
 from anime_timestamp_db.database import (
     create_evidence_database,
     create_runtime_database,
     inspect_database_json,
 )
+from anime_timestamp_db.pipeline import build_database
 from anime_timestamp_db.resolver import TimestampResolver
 from anime_timestamp_db.schema import (
     DEFAULT_EVIDENCE_DB_NAME,
@@ -54,6 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     lookup = subparsers.add_parser("lookup", help="Resolve normalized anime timestamps")
     lookup.add_argument("--db", type=Path, required=True)
+    lookup.add_argument(
+        "--mapping-db",
+        type=Path,
+        help=(
+            "Optional anime-mapping-db mappings.db for MAL/AniList/AniDB/etc. "
+            "lookups. Not required when --provider amdb is used."
+        ),
+    )
     lookup.add_argument("--provider", required=True)
     lookup.add_argument("--id", required=True)
     episode_group = lookup.add_mutually_exclusive_group(required=True)
@@ -102,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         print(_json(report))
         return 0 if report["ok"] else 1
     if args.command == "lookup":
-        resolver = TimestampResolver(args.db)
+        resolver = TimestampResolver(args.db, mapping_path=args.mapping_db)
         key = args.episode_key
         if key is None:
             key = resolver.episode_key(
