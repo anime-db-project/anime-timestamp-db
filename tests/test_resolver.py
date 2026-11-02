@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from anime_timestamp_db.database import create_runtime_database
@@ -12,7 +13,7 @@ from anime_timestamp_db.resolver import TimestampResolver
 class ResolverTests(unittest.TestCase):
     def _build_sample(self, path: Path) -> None:
         create_runtime_database(path)
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn:
             conn.execute("PRAGMA foreign_keys=ON")
             source_id = conn.execute(
                 """
@@ -66,6 +67,7 @@ class ResolverTests(unittest.TestCase):
                 "INSERT INTO consensus_members(consensus_id, segment_id) VALUES(?, ?)",
                 (consensus_id, segment_id),
             )
+            conn.commit()
 
     def test_resolves_source_and_original_lineage_separately(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
