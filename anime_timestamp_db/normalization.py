@@ -17,12 +17,7 @@ class NormalizationStats:
 
 
 def merge_movie_episode_aliases(conn: sqlite3.Connection) -> NormalizationStats:
-    """Merge a source-local ``movie`` episode into an existing canonical ``ep:1``.
-
-    Timestamp sources can describe a film with the local key ``movie`` while a
-    MAL-native source describes the same title as episode 1. If both identities
-    exist under the same normalized title, they represent one playback unit.
-    """
+    """Merge a source-local ``movie`` episode into ``ep:1`` for one AMDB title."""
 
     stats = NormalizationStats()
     pairs = conn.execute(
@@ -34,7 +29,7 @@ def merge_movie_episode_aliases(conn: sqlite3.Connection) -> NormalizationStats:
             regular.duration_ms
         FROM episodes AS movie
         JOIN episodes AS regular
-          ON regular.title_id=movie.title_id
+          ON regular.anchor_id=movie.anchor_id
          AND regular.episode_key='ep:1'
         WHERE movie.episode_key='movie'
         ORDER BY movie.id
