@@ -8,6 +8,7 @@ from pathlib import Path
 from anime_timestamp_db.config import ANISKIP
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
 from anime_timestamp_db.importers import ImportStats
+from anime_timestamp_db.mapping_identity import MappingAnchorIndex
 
 _CURRENT_FIELDS = {
     "anime_id",
@@ -105,13 +106,9 @@ def import_aniskip(
     *,
     writer: DatabaseWriter,
     snapshot_id: int,
+    identities: MappingAnchorIndex,
 ) -> ImportStats:
-    """Import AniSkip's official sanitized public CSV as MAL-native timestamps.
-
-    The public dump has changed shape over time. Both the current sanitized seed
-    format and the older export format are accepted. ``anime_id`` in the current
-    format is the MAL ID used by AniSkip's API.
-    """
+    """Import AniSkip timestamps and normalize MAL titles to stable AMDB anchors."""
 
     stats = ImportStats(source=ANISKIP.key)
     source_id = writer.source_id(ANISKIP)
@@ -185,72 +182,64 @@ def import_aniskip(
             mal_id = str(mal_id_int or "")
             episode_text = episode[0] if episode is not None else ""
             episode_id: int | None = None
+            normalized_anchor_id: int | None = None
+            normalized_episode_key = ""
 
             if valid:
                 assert mal_id_int is not None and episode is not None
                 mal_id = str(mal_id_int)
                 episode_text, episode_value = episode
                 episode_key = f"ep:{episode_text}"
-                normalization_status = "mapped"
-                normalization_reason = "native MAL title and episode identity"
+                normalized_anchor_id = identities.anchor_for("mal", mal_id)
 
-                writer.conn.execute("SAVEPOINT aniskip_row")
-                try:
-                    title_id = writer.get_or_create_title({"mal": mal_id})
-                    episode_id = writer.get_or_create_episode(
-                        title_id,
-                        episode_key=episode_key,
-                        episode_number=episode_value,
-                        duration_ms=media_duration_ms,
-                    )
-                    writer.add_episode_ref(
-                        source_id,
-                        source_title_key=mal_id,
-                        source_episode_key=episode_text,
-                        episode_id=episode_id,
-                        source_episode_number_text=episode_text,
-                    )
-                    existing = writer.conn.execute(
-                        """
-                        SELECT episode_id FROM episode_ids
-                        WHERE provider='mal' AND title_external_id=?
-                          AND scope='' AND episode_number_text=?
-                        """,
-                        (mal_id, episode_text),
-                    ).fetchone()
-                    if existing is not None and int(existing[0]) != episode_id:
-                        raise IdentityConflict(
-                            f"MAL {mal_id} episode {episode_text} maps to multiple episodes"
-                        )
-                    writer.conn.execute(
-                        """
-                        INSERT OR IGNORE INTO episode_ids(
-                            provider, title_external_id, scope,
-                            episode_number_text, episode_id
-                        ) VALUES ('mal', ?, '', ?, ?)
-                        """,
-                        (mal_id, episode_text, episode_id),
-                    )
-                except IdentityConflict as exc:
-                    writer.conn.execute("ROLLBACK TO aniskip_row")
-                    writer.conn.execute("RELEASE aniskip_row")
-                    episode_id = None
-                    normalization_status = "ambiguous"
-                    normalization_reason = str(exc)
-                    stats.ambiguous += 1
+                if normalized_anchor_id is None:
+                    normalization_status = "source-only"
+                    normalization_reason = "MAL title has no AMDB anchor"
+                    stats.unmapped += 1
                 else:
-                    writer.conn.execute("RELEASE aniskip_row")
-                    stats.mapped += 1
-
-                normalized_id = mal_id if episode_id is not None else ""
-                normalized_episode_key = episode_key if episode_id is not None else ""
+                    normalization_status = "mapped"
+                    normalization_reason = "native MAL episode normalized through AMDB anchor"
+                    normalized_episode_key = episode_key
+                    writer.conn.execute("SAVEPOINT aniskip_row")
+                    try:
+                        writer.get_or_create_title(normalized_anchor_id)
+                        episode_id = writer.get_or_create_episode(
+                            normalized_anchor_id,
+                            episode_key=episode_key,
+                            episode_number=episode_value,
+                            duration_ms=media_duration_ms,
+                        )
+                        writer.add_episode_ref(
+                            source_id,
+                            source_title_key=mal_id,
+                            source_episode_key=episode_text,
+                            episode_id=episode_id,
+                            source_episode_number_text=episode_text,
+                        )
+                        writer.add_episode_id(
+                            episode_id=episode_id,
+                            anchor_id=normalized_anchor_id,
+                            provider="mal",
+                            scope="",
+                            episode_number=int(episode_value),
+                        )
+                    except (IdentityConflict, ValueError) as exc:
+                        writer.conn.execute("ROLLBACK TO aniskip_row")
+                        writer.conn.execute("RELEASE aniskip_row")
+                        episode_id = None
+                        normalized_anchor_id = None
+                        normalized_episode_key = ""
+                        normalization_status = "ambiguous"
+                        normalization_reason = str(exc)
+                        stats.ambiguous += 1
+                    else:
+                        writer.conn.execute("RELEASE aniskip_row")
+                        stats.mapped += 1
             else:
                 normalization_status = "invalid"
                 normalization_reason = (
                     "missing MAL/episode/type or invalid timestamp range"
                 )
-                normalized_id = ""
-                normalized_episode_key = ""
                 stats.invalid += 1
 
             record_id = writer.add_evidence_record(
@@ -266,8 +255,7 @@ def import_aniskip(
                 payload_sha256=digest,
                 normalization_status=normalization_status,
                 normalization_reason=normalization_reason,
-                normalized_provider="mal" if normalized_id else "",
-                normalized_id=normalized_id,
+                normalized_anchor_id=normalized_anchor_id,
                 normalized_episode_key=normalized_episode_key,
                 metadata={
                     "schema_variant": schema_variant,
@@ -292,20 +280,33 @@ def import_aniskip(
                 )
                 stats.evidence_segments += 1
 
-            if episode_id is not None and valid:
-                writer.add_segment(
-                    episode_id=episode_id,
-                    source_id=source_id,
-                    lineage_id=lineage_id,
-                    source_segment_id=source_segment_id,
-                    segment_type=segment_type,
-                    start_ms=start_ms,
-                    end_ms=end_ms,
-                    media_duration_ms=media_duration_ms,
-                    votes_up=votes_up,
-                    votes_down=votes_down,
-                )
-                stats.runtime_segments += 1
+                if episode_id is not None:
+                    writer.add_segment(
+                        episode_id=episode_id,
+                        source_id=source_id,
+                        lineage_id=lineage_id,
+                        source_segment_id=source_segment_id,
+                        segment_type=segment_type,
+                        start_ms=start_ms,
+                        end_ms=end_ms,
+                        media_duration_ms=media_duration_ms,
+                        votes_up=votes_up,
+                        votes_down=votes_down,
+                    )
+                    stats.runtime_segments += 1
+                else:
+                    writer.add_source_segment(
+                        source_id=source_id,
+                        lineage_id=lineage_id,
+                        source_title_key=mal_id,
+                        source_episode_key=episode_text,
+                        source_segment_id=source_segment_id,
+                        segment_type=segment_type,
+                        start_ms=start_ms,
+                        end_ms=end_ms,
+                        media_duration_ms=media_duration_ms,
+                    )
+                    stats.source_only_segments += 1
 
             if index and index % 5000 == 0:
                 writer.commit()
