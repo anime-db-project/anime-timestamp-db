@@ -93,36 +93,13 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full zstd
-
-          tag="${{ steps.meta.outputs.tag }}"
-          root="anime-timestamp-db-${tag}"
-          zip="artifacts/zz-anime-timestamp-db-${tag}-source.zip"
-          tarzst="artifacts/zz-anime-timestamp-db-${tag}-source.tar.zst"
-          sevenz="artifacts/zz-anime-timestamp-db-${tag}-source.7z"
-
-          git archive --format=zip --prefix="${root}/" "$GITHUB_SHA" > "$zip"
-          git archive --format=tar --prefix="${root}/" "$GITHUB_SHA" \
-            | zstd -19 -T0 -o "$tarzst"
-
-          rm -rf source-stage
-          mkdir -p source-stage
-          git archive --format=tar --prefix="${root}/" "$GITHUB_SHA" \
-            | tar -xf - -C source-stage
-          (
-            cd source-stage
-            7z a -t7z -mx=9 "../${sevenz}" "$root" >/dev/null
-          )
-          rm -rf source-stage
-
-          (
-            cd artifacts
-            sha256sum \
-              "zz-anime-timestamp-db-${tag}-source.7z" \
-              "zz-anime-timestamp-db-${tag}-source.tar.zst" \
-              "zz-anime-timestamp-db-${tag}-source.zip" \
-              >> SHA256SUMS
-          )
+          sudo apt-get install -y p7zip-full
+          python -m anime_timestamp_db.source_archives \
+            --project anime-timestamp-db \
+            --tag "${{ steps.meta.outputs.tag }}" \
+            --commit "$GITHUB_SHA" \
+            --output-dir artifacts \
+            --checksums artifacts/SHA256SUMS
 
       - name: Verify release checksums
         if: steps.existing.outputs.exists != 'true'
