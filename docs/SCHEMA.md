@@ -1,166 +1,231 @@
-# Schema v4
+# Schema v5
 
-Schema v4 extends the data-bearing design with explicit consensus eligibility so aggregator rows can remain queryable without manufacturing extra independent votes. Schema v3 introduced episode-mapping provenance/confidence; v4 adds aggregator-safe consensus semantics. It separates normalized anime timestamps, source-addressable timestamps, and build evidence instead of forcing every upstream dataset into one identity model.
+Schema v5 makes Anime Mapping DB's stable `amdb:<anchor_id>` the cross-project title identity. The timestamp database no longer copies MAL, AniList, AniDB, Kitsu, TVDB, TMDB, IMDb, or other title aliases into its own runtime tables.
 
-`schema_version` changes only when the SQLite table/column contract changes. Builder behavior can evolve independently through `build_format_version`.
+This is a breaking SQLite schema change from v4. It intentionally removes duplicated title-mapping data while keeping provider-specific **episode numbering** where that numbering is independently proven.
+
+`schema_version` changes when the SQLite table/column contract changes. Builder-only behavior is versioned separately through `build_format_version`.
+
+## Identity contract
+
+There are now two layers with different responsibilities:
+
+```text
+anime-mapping-db
+  amdb:<anchor_id>
+      |
+      v
+anime-timestamp-db
+  title / episode / timestamp data
+```
+
+`anchor_id` is the durable title identity shared between the two databases. Provider aliases stay in Anime Mapping DB and can be resolved there when needed.
+
+The timestamp builder consumes a pinned `mappings.db.zst`, verifies/decompresses it, and resolves source-native IDs to `anchor_id` during the build. It does **not** copy Anime Mapping DB's provider alias graph into `timestamps.db` or `timestamps-evidence.db`.
 
 ## Runtime: `timestamps.db`
 
 ### `metadata`
 
-Stores schema version, database role, generation timestamp, build format, consensus configuration, and the exact Anime Mapping DB snapshot/schema used for title enrichment.
+Stores schema version, database role, generation/build versions, consensus configuration, identity namespace (`amdb`), and the exact Anime Mapping DB snapshot/schema used during the build.
 
 ### `sources` and `lineages`
 
-A `source` answers where a timestamp row was imported from. A `lineage` answers who produced the independent timing evidence. Keeping them separate prevents a mirror or aggregator from creating a fake extra consensus vote.
+A `source` answers where a timestamp observation was imported from. A `lineage` answers which independent timing source produced it. Keeping these separate prevents mirrors and aggregators from multiplying one upstream consensus vote.
 
-Build-time mapping inputs are recorded in the evidence database and manifest even when they do not contribute timestamp rows to `sources`.
+Build-time mapping inputs are recorded in evidence/manifest metadata even when they do not contribute timestamp rows to `sources`.
 
-### `titles` / `title_ids`
+### `titles`
 
-One local anime title plus explicit provider IDs.
+```text
+titles
+  anchor_id INTEGER PRIMARY KEY
+  display_title TEXT
+```
 
-Title identity currently comes from three paths:
+A runtime title is directly keyed by Anime Mapping DB's stable numeric anchor. The public representation is `amdb:<anchor_id>`.
 
-1. native MAL IDs in AniSkip;
-2. anime IDs supplied by safe SkipDB episode projection through Anime Mapping DB plus AniBridge, and direct AniBridge movie mappings;
-3. AniDB-native Open Anime Timestamps episodes projected through AniBridge;
-4. direct accepted, conflict-free aliases from the published Anime Mapping DB.
-
-Anime Mapping DB enrichment is intentionally **title-only**. If it adds a Kitsu, Shikimori, IMDb, TVDB, TMDB, aniSearch, or another provider ID, that does not prove that the provider's episode number `N` equals MAL episode `N`.
-
-IMDb TV season descriptors are deliberately not inserted as title IDs because one TV season may span multiple anime catalogue entries.
+There is deliberately no `title_ids` table in schema v5. External title aliases belong to Anime Mapping DB.
 
 ### `episodes`
 
-Normalized local playback-unit identity. Regular episodes normally use `ep:<n>`. AniDB-only non-regular scopes can use keys such as `anidb:S:1`, avoiding silent flattening of specials into regular numbering.
+```text
+episodes
+  id
+  anchor_id -> titles.anchor_id
+  episode_key
+  episode_number_text
+  episode_number
+  is_special
+  duration_ms
 
-Films mapped by a source-local key `movie` are merged into `ep:1` when the same normalized title already has a native `ep:1`. This prevents duplicate local playback identities while preserving source references.
+UNIQUE(anchor_id, episode_key)
+```
+
+`episode_key` is the timestamp database's normalized playback-unit key. Regular episodes normally use `ep:<n>`.
+
+Films that arrive from SkipDB as source key `movie` are merged into canonical `ep:1` when the same `anchor_id` already has a native `ep:1`. Source references remain intact.
 
 ### `episode_ids`
 
-Provider-specific episode identity:
+Provider episode numbering is retained without duplicating provider title IDs:
 
 ```text
-provider + title_external_id + scope + episode_number_text -> episode_id
+anchor_id + provider + scope + episode_number_text -> episode_id
 ```
 
-This is intentionally separate from `episodes.episode_number`. MAL, AniList and AniDB episode numbering may differ even when title identity is agreed. AniDB scope is retained.
+This is intentionally separate from `episodes.episode_number`. MAL, AniList and AniDB episode numbering can differ even when all three provider titles resolve to the same AMDB anchor.
 
-A `title_ids` alias alone never creates an `episode_ids` row.
+The provider's **title** ID is not stored here. At build time it is checked against Anime Mapping DB; after normalization the stable `anchor_id` is enough to identify the title.
+
+Fractional numeric episode tokens such as `12.5` are preserved and are never truncated to an integer.
 
 ### `episode_refs`
 
-Maps one timestamp source's title/episode key to a normalized episode. A source reference is never allowed to point to two normalized episodes.
+Maps one timestamp source's own title/episode key to a normalized episode:
 
-Movie normalization may repoint an existing source reference from local `movie` to canonical `ep:1`; the original source key itself is preserved.
+```text
+source_id + source_title_key + source_episode_key -> episode_id
+```
+
+These source-native keys are retained because they are provenance, not cross-project identity. One source reference cannot point to two normalized episodes.
 
 ### `segments`
 
-Approved normalized source observations. Stores source and lineage, stable source-record ID, normalized segment type, start/end milliseconds, optional full media duration, quality score and vote counts. `mapping_method` and `mapping_confidence` (`0..1`) keep native/exact/inferred episode identity queryable. Schema v4 adds `consensus_eligible` (`0/1`): a valid range can stay queryable while being deliberately excluded from consensus when independent field-level provenance cannot be established.
+Approved observations normalized to an AMDB title and concrete episode. Each row stores:
+
+- source and lineage;
+- stable source segment ID;
+- segment type;
+- integer millisecond start/end;
+- optional media duration;
+- quality/votes;
+- mapping method/confidence;
+- `consensus_eligible`.
 
 ### `source_segments`
 
-Valid ranges that are not safely cross-database-normalized. Baha Anime Skip uses this table because its bulk database is keyed by Bahamut `videoSn`. SkipDB uses it for approved rows whose IMDb title is confidently anime but whose concrete season/episode mapping remains unresolved. Open Anime Timestamps uses it for AniDB episodes that cannot be projected safely through AniBridge.
+Valid ranges whose exact cross-database episode identity cannot be proven safely. Examples include Baha `videoSn` and unresolved but still useful source-native episodes.
+
+The builder prefers retaining a valid observation here over inventing an AMDB episode identity.
 
 ### `consensus_segments` / `consensus_members`
 
-Consensus is materialized derived data, never a replacement for originals. Each row stores boundaries, media duration when available, member/source/lineage counts, confidence, algorithm, and tolerance. `consensus_members` keeps exact provenance back to every contributing normalized observation.
+Consensus is materialized derived data and never overwrites original observations. Every consensus row retains exact membership back to source `segments`.
 
-Consensus is built only after movie identity normalization and provider episode-index reconstruction. Only `consensus_eligible=1` rows are considered. Within each timing cluster, weighted boundaries use at most one representative observation per `lineage_id`; mirrored copies of the same upstream lineage therefore cannot multiply voting weight. `consensus_members` still preserves all eligible member rows for auditability.
+Only `consensus_eligible=1` observations vote. Within a timing cluster, at most one representative per independent lineage contributes voting weight, preventing mirrors/aggregators from duplicating one source vote.
 
 ## Evidence: `timestamps-evidence.db`
 
 ### `source_snapshots`
 
-One downloaded input snapshot: original/final URL, SHA-256, byte size, retrieval time, ETag/Last-Modified, upstream version, license note, record count and additional metadata.
+One downloaded build input with source/final URL, SHA-256, byte size, retrieval time, ETag/Last-Modified, upstream version, license note, record count, and compact metadata.
 
-This includes timestamp sources and build-time identity sources such as AniBridge and Anime Mapping DB.
+Anime Mapping DB is represented by a single snapshot describing its role as the stable title identity resolver. Schema v5 no longer materializes thousands of alias-enrichment evidence rows.
 
 ### `records`
 
-One upstream logical record or one explicit build-time mapping decision.
+One upstream timestamp logical record.
 
-Timestamp records store source status, scores/votes, payload hash, source title/episode references, normalization status/reason and normalized target when available.
+Important normalization columns include:
 
-Anime Mapping DB enrichment records store the MAL anchor, accepted direct aliases, aliases actually added, mapping conflicts, and local identity conflicts. They have no `record_segments` rows because they are identity evidence rather than timestamp observations.
+```text
+normalization_status
+normalization_reason
+normalized_anchor_id
+normalized_episode_key
+```
 
-SkipDB contributor identifiers are intentionally not copied.
+`normalized_anchor_id` replaces the v4 pair of normalized provider + normalized provider title ID.
+
+Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.
 
 ### `record_segments`
 
-The normalized timestamp range observed in a timestamp evidence record.
+The exact timestamp range observed in an evidence record.
 
-## Normalization statuses
+## Source normalization
 
-Timestamp records commonly use:
-
-- `mapped`: exact anime episode mapping found;
-- `mapped-inferred`: conservative same-season episode-offset inference found;
-- `unmapped`: no supported anime identity/episode projection;
-- `ambiguous`: identity conflict; runtime row suppressed;
-- `source-only`: valid anime timestamp retained under its upstream episode key because the exact episode identity remains unresolved;
-- `invalid`: malformed/missing identity or invalid range;
-- `empty`: upstream record has no ranged timestamp fields (for example an OAT preview-only point marker retained in metadata).
-
-Build-time mapping evidence can also use `mapped` or `ambiguous` depending on whether aliases were attached safely.
-
-## Segment types
-
-Current normalized names include `opening`, `ending`, `recap`, and `preview`. Types remain text rather than a closed SQL enum so a useful future provider type does not require a schema migration merely to be stored.
-
-## SkipDB / AniBridge projection
-
-SkipDB series do not rely on nonexistent `imdb_show` entries in AniBridge. The builder uses a two-stage identity bridge:
+### AniSkip
 
 ```text
-SkipDB IMDb show
-  -> Anime Mapping DB accepted TVDB/TMDB title identity
-  -> AniBridge tvdb_show/tmdb_show season mapping
-  -> MAL/AniList/AniDB episode
+AniSkip MAL title ID
+  -> Anime Mapping DB
+  -> amdb:<anchor_id>
+  -> native episode number
 ```
 
-Conflicted TVDB/TMDB routes are suppressed. When both routes exist they must collapse to one coherent provider/episode identity; disagreement stays unresolved. A single unambiguous route is allowed but gets slightly lower mapping confidence.
+AniSkip remains MAL-native at the source boundary, but MAL title IDs are not duplicated as runtime title aliases. If a MAL title has no stable AMDB anchor, its valid ranges remain source-addressable rather than being assigned a guessed title.
 
-Only one-source-episode to one-target-episode AniBridge projections are accepted. Ratio mappings (`|2`, `|-2`, etc.) represent split/combined episode granularity and are deliberately skipped. Non-contiguous target ranges without ratios can be projected by offset because one source unit still maps to one target unit.
-
-After exact projection, a missing episode can be inferred only within the same IMDb season when at least two exact MAL anchors agree on both one MAL title and one constant target-minus-source episode offset. These rows are stored as `inferred-season-offset` with confidence `0.85`; exact dual-route and single-route mappings use `1.0` and `0.98` respectively.
-
-Provider episode numbering is rebuilt as a deterministic derived index after title enrichment using the exact same pinned Anime Mapping DB and AniBridge snapshots used during normalization.
-
-## Open Anime Timestamps / AniBridge projection
-
-Open Anime Timestamps is keyed by AniDB title ID. Regular positive integer episode numbers use the direct episode bridge:
+### SkipDB / AniBridge
 
 ```text
-Open Anime Timestamps AniDB title + episode
-  -> AniBridge anidb:<id>:R
-  -> MAL/AniList/AniDB episode
+SkipDB IMDb title
+  -> Anime Mapping DB TVDB/TMDB identity
+  -> AniBridge season/episode mapping
+  -> provider episode targets
+  -> Anime Mapping DB anchor verification
+  -> amdb:<anchor_id> + normalized episode
 ```
 
-Fractional/zero/unresolved episode identities are retained source-only rather than flattened into regular numbering. AniDB `R` episode identity is recorded in `episode_ids` when projection succeeds.
+No title-name matching is used. Conflicted routes are suppressed. Ratio/split/combined mappings are not flattened.
 
-The upstream `sources` array is record-level provenance. For a single reported source, the importer assigns the matching lineage (`open-anime-timestamps`, `open-anime-timestamps-chapter-data`, `aniskip`, `anime-skip`, or `better-vrv`). If several origins are listed, the record uses `open-anime-timestamps-aggregate` and its ranges are stored with `consensus_eligible=0`; the upstream format does not prove which individual field came from which origin.
+A missing episode can be inferred only when conservative same-season anchor evidence agrees on one title and one constant offset; inferred rows retain lower mapping confidence.
 
-`preview_start` is a point marker rather than a range. Because the runtime segment schema requires a proven end boundary, point-only preview starts are preserved in evidence metadata and are not converted into guessed skip ranges.
+### Open Anime Timestamps
 
-## Anime Mapping DB projection
+```text
+OAT AniDB title + regular episode
+  -> AniBridge AniDB:R mapping
+  -> provider episode targets
+  -> Anime Mapping DB anchor verification
+  -> amdb:<anchor_id> + normalized episode
+```
 
-Only a single direct accepted edge from an existing MAL node is considered. The upstream directional `conflicts` table is honored, and the timestamp builder performs a second local conflict check before adding an alias.
+Single-source provenance keeps its own lineage. Multi-source aggregate rows remain queryable but are `consensus_eligible=0` because field-level provenance is unavailable.
 
-The builder does not:
+Point-only `preview_start` markers remain evidence metadata and are not turned into guessed ranges.
 
-- perform transitive graph traversal;
-- merge two existing timestamp titles because an alias collides;
-- infer episode numbers from a title edge;
-- call Anime Mapping DB APIs or source-specific crawlers.
+### Baha Anime Skip
 
-## Media cuts
+Baha remains source-addressable by upstream `videoSn`. No MAL/AniList/AMDB identity is invented unless a future auditable bulk mapping exists.
 
-When an upstream observation includes full media duration, that duration is stored with the segment. Consensus avoids clustering observations whose media duration differs substantially. Runtime lookups can pass playback duration to rank the closest cut first.
+## Resolver behavior
 
-## Versioning
+The primary lookup key is `amdb:<anchor_id>` and requires only `timestamps.db`.
 
-`PRAGMA user_version` and `metadata.schema_version` must both match `SCHEMA_VERSION`. Table/column contract changes require a schema version bump.
+For convenience, `TimestampResolver` can also receive a matching Anime Mapping DB file:
 
-Build process changes that do not alter the SQLite contract use `build_format_version`. Schema v3 added segment-level `mapping_method` and `mapping_confidence`; schema v4 adds `segments.consensus_eligible` for aggregator-safe voting. The Open Anime Timestamps integration and lineage-aware consensus behavior use build format v6.
+```python
+resolver = TimestampResolver(
+    "timestamps.db",
+    mapping_path="mappings.db",
+)
+```
+
+Then MAL/AniList/AniDB/etc. title IDs can be resolved dynamically through Anime Mapping DB without storing their aliases inside the timestamp database.
+
+This separation keeps the timestamp artifact smaller and gives every anime-db-project database one shared title identity source of truth.
+
+## Audit contract
+
+A valid runtime/evidence pair requires:
+
+- matching schema v5 metadata and `PRAGMA user_version`;
+- SQLite integrity success;
+- zero foreign-key errors;
+- no invalid timestamp ranges;
+- every `episode_ids.anchor_id` to match its episode's `anchor_id`;
+- no duplicate local `movie` + canonical `ep:1` identity for one title;
+- consensus membership counts to match actual membership rows;
+- no normalized episode without a runtime segment;
+- non-empty normalized and source-only coverage;
+- non-empty evidence records and ranges.
+
+Exact counts are snapshot-dependent and live in `manifest.json` and `audit.json`.
+
+## Versioning history
+
+- v3: segment-level mapping method/confidence.
+- v4: explicit consensus eligibility for aggregator-safe voting.
+- v5: stable AMDB anchor title identity; removes copied `title_ids`, removes duplicated provider title IDs from `episode_ids`, and replaces normalized provider title columns in evidence with `normalized_anchor_id`.
