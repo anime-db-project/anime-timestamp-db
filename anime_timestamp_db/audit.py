@@ -63,7 +63,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             SELECT COUNT(*)
             FROM episodes AS movie
             JOIN episodes AS regular
-              ON regular.title_id=movie.title_id
+              ON regular.anchor_id=movie.anchor_id
              AND regular.episode_key='ep:1'
             WHERE movie.episode_key='movie'
             """,
@@ -74,12 +74,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             SELECT COUNT(*)
             FROM episode_ids AS eid
             JOIN episodes AS ep ON ep.id=eid.episode_id
-            WHERE NOT EXISTS (
-                SELECT 1 FROM title_ids AS tid
-                WHERE tid.title_id=ep.title_id
-                  AND tid.provider=eid.provider
-                  AND tid.external_id=eid.title_external_id
-            )
+            WHERE eid.anchor_id <> ep.anchor_id
             """,
         )
         counts = {
@@ -88,7 +83,6 @@ def audit_runtime(path: Path) -> dict[str, Any]:
                 "sources",
                 "lineages",
                 "titles",
-                "title_ids",
                 "episodes",
                 "episode_ids",
                 "episode_refs",
@@ -100,6 +94,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
         }
         report = {
             "schema_version": user_version,
+            "identity_namespace": "amdb",
             "integrity_check": integrity,
             "foreign_key_errors": len(foreign_keys),
             "invalid_segments": invalid_segments,
@@ -168,6 +163,7 @@ def audit_evidence(path: Path) -> dict[str, Any]:
         }
         report = {
             "schema_version": user_version,
+            "identity_namespace": "amdb",
             "integrity_check": integrity,
             "foreign_key_errors": len(foreign_keys),
             "counts": counts,
