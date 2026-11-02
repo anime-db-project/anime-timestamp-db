@@ -22,9 +22,9 @@ class ConsensusTests(unittest.TestCase):
             with DatabaseWriter(runtime, evidence) as writer:
                 source = writer.source_id(SKIPDB)
                 lineage = writer.lineage_id("skipdb", "SkipDB")
-                title = writer.get_or_create_title({"mal": "1"})
+                anchor = writer.get_or_create_title(101)
                 episode = writer.get_or_create_episode(
-                    title, episode_key="ep:1", episode_number=1
+                    anchor, episode_key="ep:1", episode_number=1
                 )
                 for segment_id, start, end, duration, score in (
                     ("a", 10000, 100000, 1440000, 5),
@@ -67,9 +67,9 @@ class ConsensusTests(unittest.TestCase):
                 lineage_b = writer.lineage_id("independent-b", "Independent B")
                 lineage_c = writer.lineage_id("independent-c", "Independent C")
                 aggregate = writer.lineage_id("aggregate", "Aggregate")
-                title = writer.get_or_create_title({"mal": "1"})
+                anchor = writer.get_or_create_title(101)
                 episode = writer.get_or_create_episode(
-                    title, episode_key="ep:1", episode_number=1
+                    anchor, episode_key="ep:1", episode_number=1
                 )
                 for index in range(5):
                     writer.add_segment(
