@@ -85,9 +85,7 @@ def mapping_database_metadata(path: Path) -> dict[str, str]:
     with closing(_connect_readonly(path)) as conn:
         tables = {
             str(row[0])
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         required = {"metadata", "nodes", "edges", "conflicts"}
         missing = sorted(required - tables)
@@ -252,9 +250,7 @@ def enrich_titles_from_mapping_db(
                     provider: skipped_mapping.get(
                         provider, conflict_details.get(provider, [])
                     )
-                    for provider in sorted(
-                        conflict_providers | set(skipped_mapping)
-                    )
+                    for provider in sorted(conflict_providers | set(skipped_mapping))
                 },
                 "local_conflicts": local_conflicts,
             }
@@ -263,7 +259,9 @@ def enrich_titles_from_mapping_db(
                 normalization_reason = "direct accepted anime-mapping-db title aliases"
             else:
                 normalization_status = "ambiguous"
-                normalization_reason = "all direct aliases were conflicted or suppressed"
+                normalization_reason = (
+                    "all direct aliases were conflicted or suppressed"
+                )
 
             writer.add_evidence_record(
                 snapshot_id=snapshot_id,

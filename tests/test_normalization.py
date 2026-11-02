@@ -114,9 +114,7 @@ class NormalizationTests(unittest.TestCase):
                 }
                 id_episodes = {
                     int(row[0])
-                    for row in writer.conn.execute(
-                        "SELECT episode_id FROM episode_ids"
-                    )
+                    for row in writer.conn.execute("SELECT episode_id FROM episode_ids")
                 }
 
             audit = audit_runtime(root / "runtime.db")

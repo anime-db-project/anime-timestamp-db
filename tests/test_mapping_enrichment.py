@@ -113,9 +113,7 @@ class MappingEnrichmentTests(unittest.TestCase):
 
             with DatabaseWriter(root / "runtime.db", root / "evidence.db") as writer:
                 title = writer.get_or_create_title({"mal": "1"})
-                other_title = writer.get_or_create_title(
-                    {"mal": "2", "kitsu": "201"}
-                )
+                other_title = writer.get_or_create_title({"mal": "2", "kitsu": "201"})
                 self.assertNotEqual(title, other_title)
 
                 download = DownloadedSource(
