@@ -82,15 +82,14 @@ def rebuild_episode_ids(
     *,
     source_key: str = "skipdb",
 ) -> EpisodeIndexStats:
-    """Rebuild provider-specific episode numbering from normalized source refs.
+    """Add provider episode IDs derivable from normalized source references.
 
-    The normalized episode itself was already accepted by the importer. This pass
-    preserves each provider's own episode number/scope so consumers never have to
-    assume MAL, AniList and AniDB use the same numbering.
+    This is intentionally additive. Direct providers such as AniSkip may already
+    have inserted MAL episode IDs; deleting the table here would destroy valid
+    native numbering that AniBridge cannot reconstruct.
     """
 
     stats = EpisodeIndexStats()
-    conn.execute("DELETE FROM episode_ids")
     rows = conn.execute(
         """
         SELECT er.episode_id, er.source_title_key, er.source_episode_key

@@ -56,6 +56,7 @@ jobs:
             artifacts/SHA256SUMS
             artifacts/DATA_LICENSE.md
             artifacts/THIRD_PARTY_NOTICES.md
+            artifacts/ANISKIP_PUBLIC_DATA_NOTICE.md
             artifacts/SKIPDB_DATA_LICENSE.txt
             artifacts/BAHA_LICENSE.txt
             artifacts/ANIBRIDGE_LICENSE.txt

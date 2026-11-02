@@ -9,18 +9,18 @@ from typing import Any
 
 from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.audit import audit_databases
-from anime_timestamp_db.config import ANIBRIDGE, BAHA, SKIPDB
+from anime_timestamp_db.config import ANIBRIDGE, ANISKIP, BAHA, SKIPDB
 from anime_timestamp_db.consensus import rebuild_consensus
 from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
-from anime_timestamp_db.importers import import_baha, import_skipdb
+from anime_timestamp_db.importers import import_aniskip, import_baha, import_skipdb
 from anime_timestamp_db.schema import (
     DEFAULT_EVIDENCE_DB_NAME,
     DEFAULT_RUNTIME_DB_NAME,
     SCHEMA_VERSION,
 )
 
-BUILD_FORMAT_VERSION = 1
+BUILD_FORMAT_VERSION = 2
 
 
 def _sha256(path: Path) -> str:
@@ -72,9 +72,10 @@ def build_database(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
+    specs = (ANIBRIDGE, ANISKIP, SKIPDB, BAHA)
     downloads = {
         spec.key: download_source(spec, cache_dir, force=force_download)
-        for spec in (ANIBRIDGE, SKIPDB, BAHA)
+        for spec in specs
     }
 
     runtime_path = output_dir / DEFAULT_RUNTIME_DB_NAME
@@ -97,6 +98,22 @@ def build_database(
             len(anibridge.payload) - (1 if "$meta" in anibridge.payload else 0),
         )
         writer.set_snapshot_record_count(bridge_snapshot, bridge_entry_count)
+
+        aniskip_snapshot = writer.add_snapshot(
+            ANISKIP,
+            downloads[ANISKIP.key],
+            metadata={
+                "role": "primary-mal-native-timestamp-source",
+                "public_sanitized_dataset": True,
+                "explicit_redistribution_license_found": False,
+                "user_id_imported": False,
+            },
+        )
+        aniskip_stats = import_aniskip(
+            downloads[ANISKIP.key].path,
+            writer=writer,
+            snapshot_id=aniskip_snapshot,
+        )
 
         skip_snapshot = writer.add_snapshot(
             SKIPDB,
@@ -139,6 +156,7 @@ def build_database(
     _compress(evidence_path, evidence_zst)
     _copy_notice("DATA_LICENSE.md", output_dir)
     _copy_notice("THIRD_PARTY_NOTICES.md", output_dir)
+    _copy_notice("ANISKIP_PUBLIC_DATA_NOTICE.md", output_dir)
     _copy_notice("licenses/SKIPDB_DATA_LICENSE.txt", output_dir)
     _copy_notice("licenses/BAHA_LICENSE.txt", output_dir)
     _copy_notice("licenses/ANIBRIDGE_LICENSE.txt", output_dir)
@@ -155,10 +173,12 @@ def build_database(
                 "homepage_url": spec.homepage_url,
                 "source_kind": spec.source_kind,
                 "license_note": spec.license_note,
+                "explicit_redistribution_license": spec.explicit_redistribution_license,
             }
-            for spec in (ANIBRIDGE, SKIPDB, BAHA)
+            for spec in specs
         },
         "imports": {
+            "aniskip": aniskip_stats.as_dict(),
             "skipdb": skip_stats.as_dict(),
             "baha": baha_stats.as_dict(),
             "anibridge_mapping_entries": bridge_entry_count,
@@ -190,6 +210,7 @@ def build_database(
     for name in (
         "DATA_LICENSE.md",
         "THIRD_PARTY_NOTICES.md",
+        "ANISKIP_PUBLIC_DATA_NOTICE.md",
         "SKIPDB_DATA_LICENSE.txt",
         "BAHA_LICENSE.txt",
         "ANIBRIDGE_LICENSE.txt",

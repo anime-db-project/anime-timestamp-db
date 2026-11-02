@@ -2,11 +2,19 @@
 
 Anime Timestamp DB's code license does not replace upstream data or software licenses.
 
+## AniSkip public dataset
+
+Source: https://github.com/aniskip/sanitize-db-dump
+
+Used as the primary MAL-native timestamp source. The official sanitized CSV exposes MAL title ID, episode number, episode length, segment type/range, and a stable external ID. `user_id` is intentionally not copied into compiled artifacts.
+
+Upstream publishes the snapshot as public/sanitized data and uses it for database seeding, but no separate explicit data license was found in the dump repository. See `ANISKIP_PUBLIC_DATA_NOTICE.md`.
+
 ## SkipDB
 
 Source: https://github.com/SkipDB-TV/skipdb
 
-Used as the principal normalized timestamp dataset. Only approved rows with a safe anime episode mapping enter runtime `segments`; other public statuses are retained only in the evidence database. SkipDB contributor identifiers are not copied into the compiled databases.
+Used as a supplementary timestamp dataset. Only approved rows with a safe anime episode mapping enter runtime `segments`; other public statuses are retained only in the evidence database. SkipDB contributor identifiers are not copied into the compiled databases.
 
 Data terms: ODbL 1.0 plus SkipDB's additional Service Provider Reciprocity terms. See `SKIPDB_DATA_LICENSE.txt` in every build artifact.
 
@@ -16,7 +24,7 @@ Source: https://github.com/anibridge/anibridge-mappings
 
 MIT License, copyright © 2026 AniBridge.
 
-Used only as a build-time episode identity bridge. Ratio/split mappings are rejected rather than projected onto differently cut episodes.
+Used only as a build-time episode identity bridge for SkipDB. Ratio/split mappings are rejected rather than projected onto differently cut episodes.
 
 ## Baha Anime Skip
 
@@ -30,4 +38,4 @@ The builder consumes `packages/baha-anime-skip-db/data.json`. Because that bulk 
 
 Reviewed source/fork: https://github.com/Ellivers/open-anime-timestamps
 
-Not included in default distributable builds because an explicit repository license was not found during integration review.
+Not included in default builds because an explicit repository license or equivalent upstream public-dataset statement was not found during integration review.

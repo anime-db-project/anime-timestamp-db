@@ -1,6 +1,12 @@
 # Compiled data licensing
 
-The software in this repository is Apache-2.0. The compiled timestamp databases are governed separately by the terms of the upstream datasets included in a build.
+The software in this repository is Apache-2.0. Compiled timestamp databases are governed separately by the terms and publication status of their upstream datasets.
+
+## AniSkip public sanitized dataset
+
+The default build incorporates the official `aniskip/sanitize-db-dump/skip_times_public.csv` export. Upstream publishes this as a public/sanitized dataset and uses the sanitized snapshot for database seeding, but the dump repository does not currently expose a separate explicit data license.
+
+We do not label AniSkip data as MIT, ODbL, or any other license without an upstream grant. See `ANISKIP_PUBLIC_DATA_NOTICE.md`. The manifest records the exact source URL and SHA-256 used for each build. AniSkip `user_id` values are not copied into the compiled databases or record hashes.
 
 ## SkipDB-derived data
 
@@ -24,7 +30,7 @@ AniBridge's published mapping file is used at build time to establish safe episo
 
 ## Excluded sources
 
-Public downloadability is not treated as redistribution permission. `open-anime-timestamps` is excluded from the default distributable build because no explicit upstream license was found during integration.
+Public downloadability by itself is not treated as redistribution permission. `open-anime-timestamps` remains excluded because no explicit upstream license or equivalent public-dataset statement was found during integration.
 
 ## Build provenance
 

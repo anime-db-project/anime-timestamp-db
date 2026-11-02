@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 from dataclasses import asdict, dataclass
@@ -7,13 +8,21 @@ from pathlib import Path
 from typing import Any
 
 from anime_timestamp_db.anibridge import AniBridgeIndex, EpisodeTarget
-from anime_timestamp_db.config import BAHA, SKIPDB
+from anime_timestamp_db.config import ANISKIP, BAHA, SKIPDB
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
 
 _SKIPDB_TYPES = {
     "intro": "opening",
     "recap": "recap",
     "outro": "ending",
+    "preview": "preview",
+}
+_ANISKIP_TYPES = {
+    "op": "opening",
+    "ed": "ending",
+    "mixed-op": "mixed-opening",
+    "mixed-ed": "mixed-ending",
+    "recap": "recap",
     "preview": "preview",
 }
 _BAHA_TYPES = {
@@ -78,15 +87,27 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
+def _episode_number(value: object) -> tuple[str, float] | None:
+    parsed = _safe_float(value)
+    if parsed is None or parsed < 0:
+        return None
+    if parsed.is_integer():
+        return str(int(parsed)), float(int(parsed))
+    text = format(parsed, ".15g")
+    return text, parsed
+
+
+def _normalize_aniskip_type(value: object) -> str | None:
+    raw = str(value or "").strip().casefold().replace("_", "-")
+    if not raw:
+        return None
+    return _ANISKIP_TYPES.get(raw, raw)
+
+
 def _normalize_episode_targets(
     targets: tuple[EpisodeTarget, ...],
 ) -> tuple[dict[str, str], int, str, bool] | None:
-    """Reduce explicit AniBridge targets to one coherent anime episode identity.
-
-    Returns ``(title_ids, episode_number, episode_key, is_special)``. We reject
-    provider conflicts instead of guessing. AniDB non-regular scopes are kept as
-    special episode keys when MAL/AniList are unavailable.
-    """
+    """Reduce explicit AniBridge targets to one coherent anime episode identity."""
 
     if not targets:
         return None
@@ -135,6 +156,190 @@ def _normalize_episode_targets(
         f"anidb:{normalized_scope}:{episode_number}",
         True,
     )
+
+
+def import_aniskip(
+    path: Path,
+    *,
+    writer: DatabaseWriter,
+    snapshot_id: int,
+) -> ImportStats:
+    """Import AniSkip's official sanitized public CSV as MAL-native timestamps."""
+
+    stats = ImportStats(source=ANISKIP.key)
+    source_id = writer.source_id(ANISKIP)
+    lineage_id = writer.lineage_id(
+        "aniskip",
+        "AniSkip",
+        "Official sanitized public AniSkip timing dataset.",
+    )
+
+    with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = csv.DictReader(handle)
+        required = {
+            "id",
+            "episode_length",
+            "skip_type",
+            "skip_time_start",
+            "skip_time_end",
+            "mal_id",
+            "episode_number",
+            "external_id",
+        }
+        if rows.fieldnames is None or not required.issubset(set(rows.fieldnames)):
+            raise ValueError(
+                "AniSkip CSV is missing required columns: "
+                + ", ".join(sorted(required - set(rows.fieldnames or ())))
+            )
+
+        for index, raw in enumerate(rows):
+            stats.records += 1
+            safe_raw = {key: value for key, value in raw.items() if key != "user_id"}
+            mal_id_int = _safe_int(raw.get("mal_id"), minimum=1)
+            episode = _episode_number(raw.get("episode_number"))
+            segment_type = _normalize_aniskip_type(raw.get("skip_type"))
+            start_sec = _safe_float(raw.get("skip_time_start"))
+            end_sec = _safe_float(raw.get("skip_time_end"))
+            episode_length_sec = _safe_float(raw.get("episode_length"))
+            external_id = str(raw.get("external_id") or "").strip()
+            row_id = str(raw.get("id") or index).strip()
+            source_segment_id = f"aniskip:{external_id or row_id}"
+
+            valid = (
+                mal_id_int is not None
+                and episode is not None
+                and segment_type is not None
+                and start_sec is not None
+                and end_sec is not None
+                and start_sec >= 0
+                and end_sec > start_sec
+            )
+            start_ms = round((start_sec or 0.0) * 1000)
+            end_ms = round((end_sec or 0.0) * 1000)
+            media_duration_ms = (
+                round(episode_length_sec * 1000)
+                if episode_length_sec is not None and episode_length_sec > 0
+                else None
+            )
+            valid = bool(valid and end_ms > start_ms)
+
+            if valid:
+                assert mal_id_int is not None and episode is not None
+                mal_id = str(mal_id_int)
+                episode_text, episode_value = episode
+                episode_key = f"ep:{episode_text}"
+                normalization_status = "mapped"
+                normalization_reason = "native MAL title and episode identity"
+                stats.mapped += 1
+
+                try:
+                    title_id = writer.get_or_create_title({"mal": mal_id})
+                    episode_id = writer.get_or_create_episode(
+                        title_id,
+                        episode_key=episode_key,
+                        episode_number=episode_value,
+                        duration_ms=media_duration_ms,
+                    )
+                    writer.add_episode_ref(
+                        source_id,
+                        source_title_key=mal_id,
+                        source_episode_key=episode_text,
+                        episode_id=episode_id,
+                        source_episode_number_text=episode_text,
+                    )
+                    existing = writer.conn.execute(
+                        """
+                        SELECT episode_id FROM episode_ids
+                        WHERE provider='mal' AND title_external_id=?
+                          AND scope='' AND episode_number_text=?
+                        """,
+                        (mal_id, episode_text),
+                    ).fetchone()
+                    if existing is not None and int(existing[0]) != episode_id:
+                        raise IdentityConflict(
+                            f"MAL {mal_id} episode {episode_text} maps to multiple episodes"
+                        )
+                    writer.conn.execute(
+                        """
+                        INSERT OR IGNORE INTO episode_ids(
+                            provider, title_external_id, scope,
+                            episode_number_text, episode_id
+                        ) VALUES ('mal', ?, '', ?, ?)
+                        """,
+                        (mal_id, episode_text, episode_id),
+                    )
+                except IdentityConflict as exc:
+                    normalization_status = "ambiguous"
+                    normalization_reason = str(exc)
+                    stats.mapped -= 1
+                    stats.ambiguous += 1
+                    episode_id = None
+                normalized_id = mal_id if normalization_status == "mapped" else ""
+                normalized_episode_key = (
+                    episode_key if normalization_status == "mapped" else ""
+                )
+            else:
+                mal_id = str(mal_id_int or "")
+                episode_text = episode[0] if episode is not None else ""
+                normalization_status = "invalid"
+                normalization_reason = "missing MAL/episode/type or invalid timestamp range"
+                normalized_id = ""
+                normalized_episode_key = ""
+                episode_id = None
+                stats.invalid += 1
+
+            record_id = writer.add_evidence_record(
+                snapshot_id=snapshot_id,
+                record_key=source_segment_id,
+                lineage_key="aniskip",
+                source_title_key=mal_id,
+                source_episode_key=episode_text,
+                source_status="public-sanitized",
+                payload_sha256=_payload_hash(safe_raw),
+                normalization_status=normalization_status,
+                normalization_reason=normalization_reason,
+                normalized_provider="mal" if normalized_id else "",
+                normalized_id=normalized_id,
+                normalized_episode_key=normalized_episode_key,
+                metadata={
+                    "upstream_id": row_id,
+                    "created_at": str(raw.get("created_at") or ""),
+                    "updated_at": str(raw.get("updated_at") or ""),
+                    "raw_skip_type": str(raw.get("skip_type") or ""),
+                },
+            )
+
+            if valid:
+                assert segment_type is not None
+                writer.add_evidence_segment(
+                    record_id,
+                    source_segment_id=source_segment_id,
+                    segment_type=segment_type,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    media_duration_ms=media_duration_ms,
+                )
+                stats.evidence_segments += 1
+
+            if episode_id is not None and valid:
+                writer.add_segment(
+                    episode_id=episode_id,
+                    source_id=source_id,
+                    lineage_id=lineage_id,
+                    source_segment_id=source_segment_id,
+                    segment_type=segment_type,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    media_duration_ms=media_duration_ms,
+                )
+                stats.runtime_segments += 1
+
+            if index and index % 5000 == 0:
+                writer.commit()
+
+    writer.set_snapshot_record_count(snapshot_id, stats.records)
+    writer.commit()
+    return stats
 
 
 def import_skipdb(

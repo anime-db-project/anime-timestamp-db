@@ -11,8 +11,21 @@ class SourceSpec:
     homepage_url: str
     source_kind: str
     license_note: str
-    redistributable: bool = True
+    explicit_redistribution_license: bool = True
 
+
+ANISKIP = SourceSpec(
+    key="aniskip",
+    display_name="AniSkip Public Dataset",
+    url="https://raw.githubusercontent.com/aniskip/sanitize-db-dump/main/skip_times_public.csv",
+    homepage_url="https://github.com/aniskip/sanitize-db-dump",
+    source_kind="timestamp",
+    license_note=(
+        "Official public sanitized AniSkip dataset; upstream publishes it for "
+        "dataset export/seeding but no separate explicit data license was found"
+    ),
+    explicit_redistribution_license=False,
+)
 
 SKIPDB = SourceSpec(
     key="skipdb",
@@ -41,8 +54,9 @@ BAHA = SourceSpec(
     license_note="MIT repository license",
 )
 
-# This dataset is useful but the upstream repository does not currently expose
-# a license. The importer is deliberately not part of the default public build.
+# Useful, but not part of default public artifacts because the repository does
+# not currently expose an explicit license or a comparable upstream statement
+# that the snapshot itself is a public dataset/export.
 OPEN_ANIME_TIMESTAMPS = SourceSpec(
     key="open-anime-timestamps",
     display_name="Open Anime Timestamps",
@@ -50,8 +64,10 @@ OPEN_ANIME_TIMESTAMPS = SourceSpec(
     homepage_url="https://github.com/Ellivers/open-anime-timestamps",
     source_kind="timestamp-marker",
     license_note="No explicit upstream license found; disabled for distributable builds",
-    redistributable=False,
+    explicit_redistribution_license=False,
 )
 
-DEFAULT_BUILD_SOURCES = (ANIBRIDGE, SKIPDB, BAHA)
-SOURCE_BY_KEY = {spec.key: spec for spec in (*DEFAULT_BUILD_SOURCES, OPEN_ANIME_TIMESTAMPS)}
+DEFAULT_BUILD_SOURCES = (ANIBRIDGE, ANISKIP, SKIPDB, BAHA)
+SOURCE_BY_KEY = {
+    spec.key: spec for spec in (*DEFAULT_BUILD_SOURCES, OPEN_ANIME_TIMESTAMPS)
+}

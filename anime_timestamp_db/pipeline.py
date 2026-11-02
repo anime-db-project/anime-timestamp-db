@@ -40,6 +40,7 @@ def _rewrite_checksums(output_dir: Path) -> None:
         "manifest.json",
         "DATA_LICENSE.md",
         "THIRD_PARTY_NOTICES.md",
+        "ANISKIP_PUBLIC_DATA_NOTICE.md",
         "SKIPDB_DATA_LICENSE.txt",
         "BAHA_LICENSE.txt",
         "ANIBRIDGE_LICENSE.txt",
@@ -58,11 +59,7 @@ def build_database(
     force_download: bool = False,
     consensus_tolerance_ms: int = 5000,
 ) -> dict[str, Any]:
-    """Run the base builder and add provider-specific episode indexes.
-
-    Keeping this as a final deterministic indexing pass makes the data-bearing
-    schema explicit without coupling source importers to one resolver interface.
-    """
+    """Run the base builder and add safe cross-provider episode indexes."""
 
     output_dir = Path(output_dir)
     resolved_cache = Path(cache_dir or (output_dir / ".cache"))
