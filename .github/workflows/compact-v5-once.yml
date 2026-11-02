@@ -1,0 +1,219 @@
+name: Compact schema v5 storage once
+
+on:
+  push:
+    branches:
+      - refactor/anchor-runtime-v5
+    paths:
+      - ".github/workflows/compact-v5-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  compact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refactor/anchor-runtime-v5
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Apply compact-storage patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, count: int = 1) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, count))
+
+          replace(
+              "anime_timestamp_db/schema.py",
+              '''CREATE INDEX segments_source_idx
+    ON segments(source_id, episode_id, segment_type);
+CREATE INDEX segments_lineage_idx
+    ON segments(lineage_id, episode_id, segment_type);
+CREATE INDEX segments_duration_idx
+    ON segments(episode_id, segment_type, media_duration_ms);
+''',
+              '''-- One episode-first index covers resolver and consensus scans. Source,
+-- lineage and duration filters operate on the already-small per-episode row set.
+''',
+          )
+          replace(
+              "anime_timestamp_db/schema.py",
+              '''CREATE INDEX consensus_episode_idx
+    ON consensus_segments(episode_id, segment_type, cluster_index);
+CREATE INDEX consensus_duration_idx
+    ON consensus_segments(episode_id, segment_type, media_duration_ms);
+''',
+              '''-- UNIQUE(episode_id, segment_type, cluster_index) already provides the
+-- episode-first index used by consensus lookups; do not duplicate it.
+''',
+          )
+          replace(
+              "anime_timestamp_db/schema.py",
+              "    payload_sha256 TEXT NOT NULL DEFAULT '',\n",
+              "    payload_sha256 BLOB NOT NULL DEFAULT X''\n        CHECK(length(payload_sha256) IN (0, 32)),\n",
+          )
+          replace(
+              "anime_timestamp_db/schema.py",
+              '''CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);
+CREATE INDEX records_normalization_idx
+    ON records(normalization_status, snapshot_id);
+
+''',
+              '''-- Evidence is append-only build provenance. With only a handful of snapshots,
+-- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.
+
+''',
+          )
+
+          replace(
+              "anime_timestamp_db/database.py",
+              '''def _prepare_path(path: Path, *, overwrite: bool) -> Path:
+''',
+              '''def _sha256_blob(value: str | bytes) -> bytes:
+    if isinstance(value, bytes):
+        digest = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return b""
+        try:
+            digest = bytes.fromhex(text)
+        except ValueError as exc:
+            raise ValueError("payload_sha256 must be hexadecimal SHA-256") from exc
+    if len(digest) not in (0, 32):
+        raise ValueError("payload_sha256 must contain exactly 32 bytes")
+    return digest
+
+
+def _prepare_path(path: Path, *, overwrite: bool) -> Path:
+''',
+          )
+          replace(
+              "anime_timestamp_db/database.py",
+              '        payload_sha256: str = "",\n',
+              '        payload_sha256: str | bytes = b"",\n',
+          )
+          replace(
+              "anime_timestamp_db/database.py",
+              '''                payload_sha256,
+                normalization_status,
+''',
+              '''                _sha256_blob(payload_sha256),
+                normalization_status,
+''',
+          )
+
+          replace(
+              "anime_timestamp_db/aniskip_importer.py",
+              "                base_segment_id = digest\n",
+              "                base_segment_id = digest[:32]\n",
+          )
+          replace(
+              "anime_timestamp_db/aniskip_importer.py",
+              "                base_segment_id = external_id or row_id or digest\n",
+              "                base_segment_id = external_id or row_id or digest[:32]\n",
+          )
+          replace(
+              "anime_timestamp_db/importers.py",
+              '        record_key = f"skipdb:{digest}"\n',
+              '        record_key = f"skipdb:{digest[:32]}"\n',
+          )
+          replace(
+              "anime_timestamp_db/build.py",
+              "BUILD_FORMAT_VERSION = 7\n",
+              "BUILD_FORMAT_VERSION = 8\n",
+          )
+
+          replace(
+              "docs/SCHEMA.md",
+              '''Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.
+''',
+              '''Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot. Full per-record SHA-256 digests are stored as 32-byte BLOBs rather than 64-character hex text; synthetic AniSkip/SkipDB record IDs retain a source prefix plus a 128-bit digest token while the full digest remains available in evidence.
+''',
+          )
+          replace(
+              "docs/SCHEMA.md",
+              '''- stable source segment ID;
+''',
+              '''- compact stable source segment ID;
+''',
+          )
+          PY
+
+      - name: Install and validate
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . ruff coverage
+          ruff format anime_timestamp_db tests scripts
+          ruff check anime_timestamp_db tests scripts --select E9,F63,F7,F82
+          ruff format --check anime_timestamp_db tests scripts
+          python -m unittest discover -s tests -v
+
+      - name: Build real-data databases
+        run: |
+          anime-timestamp-db build \
+            --output-dir artifacts \
+            --cache-dir .build-cache/timestamp-sources
+          anime-timestamp-db audit \
+            --db artifacts/timestamps.db \
+            --evidence-db artifacts/timestamps-evidence.db \
+            > artifacts/audit.json
+          cat artifacts/audit.json
+
+      - name: Print compact sizes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("artifacts/manifest.json").read_text())
+          for name in (
+              "timestamps.db",
+              "timestamps.db.zst",
+              "timestamps-evidence.db",
+              "timestamps-evidence.db.zst",
+          ):
+              item = manifest["artifacts"][name]
+              print(f"{name}\t{item['size_bytes']}\t{item['sha256']}")
+          PY
+
+      - name: Upload compact validation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: anime-timestamp-db-v5-compact-${{ github.sha }}
+          path: |
+            artifacts/timestamps.db
+            artifacts/timestamps.db.zst
+            artifacts/timestamps-evidence.db
+            artifacts/timestamps-evidence.db.zst
+            artifacts/manifest.json
+            artifacts/audit.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit validated compact storage
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add anime_timestamp_db docs/SCHEMA.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Compact schema v5 storage"
+          git push origin HEAD:refactor/anchor-runtime-v5
