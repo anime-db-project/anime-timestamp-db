@@ -19,21 +19,14 @@ class NormalizationTests(unittest.TestCase):
                 skipdb_source = writer.source_id(SKIPDB)
                 aniskip_lineage = writer.lineage_id("aniskip", "AniSkip")
                 skipdb_lineage = writer.lineage_id("skipdb", "SkipDB")
-                title = writer.get_or_create_title(
-                    {
-                        "mal": "48561",
-                        "anilist": "131573",
-                        "anidb": "16169",
-                        "imdb_movie": "tt14331144",
-                    }
-                )
+                anchor = writer.get_or_create_title(9001)
                 episode_one = writer.get_or_create_episode(
-                    title,
+                    anchor,
                     episode_key="ep:1",
                     episode_number=1,
                 )
                 movie = writer.get_or_create_episode(
-                    title,
+                    anchor,
                     episode_key="movie",
                     episode_number=1,
                     duration_ms=7200000,
@@ -70,23 +63,17 @@ class NormalizationTests(unittest.TestCase):
                     start_ms=1000,
                     end_ms=91000,
                 )
-                writer.conn.execute(
-                    """
-                    INSERT INTO episode_ids(
-                        provider, title_external_id, scope,
-                        episode_number_text, episode_id
-                    ) VALUES ('mal', '48561', '', '1', ?)
-                    """,
-                    (episode_one,),
+                writer.add_episode_id(
+                    episode_id=episode_one,
+                    anchor_id=anchor,
+                    provider="mal",
+                    episode_number=1,
                 )
-                writer.conn.execute(
-                    """
-                    INSERT INTO episode_ids(
-                        provider, title_external_id, scope,
-                        episode_number_text, episode_id
-                    ) VALUES ('imdb_movie', 'tt14331144', '', '1', ?)
-                    """,
-                    (movie,),
+                writer.add_episode_id(
+                    episode_id=movie,
+                    anchor_id=anchor,
+                    provider="imdb_movie",
+                    episode_number=1,
                 )
 
                 stats = merge_movie_episode_aliases(writer.conn)
@@ -95,10 +82,10 @@ class NormalizationTests(unittest.TestCase):
                     """
                     SELECT id, episode_key, duration_ms
                     FROM episodes
-                    WHERE title_id=?
+                    WHERE anchor_id=?
                     ORDER BY id
                     """,
-                    (title,),
+                    (anchor,),
                 ).fetchall()
                 segment_episodes = {
                     int(row[0])
