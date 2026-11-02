@@ -93,7 +93,7 @@ A validated schema-v3 build against the 2026-11-01 SkipDB dump contains:
 - **919** additional approved SkipDB anime segments retained source-only because episode identity remains unresolved;
 - **19,681** Baha source-only segments.
 
-For SkipDB specifically, the same dump contains 809 IMDb titles that Anime Mapping DB can directly tie to anime catalog identities. The bridge normalizes 37,283 exact series segments, 10 exact movie segments, and 408 conservatively inferred same-season segments; unresolved anime rows are preserved instead of dropped. Counts are snapshot-dependent and the authoritative numbers for any artifact live in its `manifest.json` and `audit.json`.
+For SkipDB specifically, the same dump contains 809 IMDb titles that Anime Mapping DB can directly tie to anime catalog identities. The bridge normalizes 37,273 exact series segments, 10 exact movie segments, and 408 conservatively inferred same-season segments; unresolved anime rows are preserved instead of dropped. Counts are snapshot-dependent and the authoritative numbers for any artifact live in its `manifest.json` and `audit.json`.
 
 ## Evidence and reproducibility
 
