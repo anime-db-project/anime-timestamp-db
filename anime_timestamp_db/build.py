@@ -8,19 +8,20 @@ from pathlib import Path
 from typing import Any
 
 from anime_timestamp_db.anibridge import AniBridgeIndex
+from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.audit import audit_databases
 from anime_timestamp_db.config import ANIBRIDGE, ANISKIP, BAHA, SKIPDB
 from anime_timestamp_db.consensus import rebuild_consensus
 from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
-from anime_timestamp_db.importers import import_aniskip, import_baha, import_skipdb
+from anime_timestamp_db.importers import import_baha, import_skipdb
 from anime_timestamp_db.schema import (
     DEFAULT_EVIDENCE_DB_NAME,
     DEFAULT_RUNTIME_DB_NAME,
     SCHEMA_VERSION,
 )
 
-BUILD_FORMAT_VERSION = 2
+BUILD_FORMAT_VERSION = 3
 
 
 def _sha256(path: Path) -> str:
@@ -39,9 +40,7 @@ def _compress(source: Path, target: Path, *, level: int = 10) -> None:
         compressor.copy_stream(src, dst)
 
 
-def _copy_notice(
-    name: str, output_dir: Path, *, output_name: str | None = None
-) -> None:
+def _copy_notice(name: str, output_dir: Path, *, output_name: str | None = None) -> None:
     root = Path(__file__).resolve().parent.parent
     source = root / name
     if source.is_file():

@@ -6,7 +6,7 @@ Anime Timestamp DB's code license does not replace upstream data or software lic
 
 Source: https://github.com/aniskip/sanitize-db-dump
 
-Used as the primary MAL-native timestamp source. The official sanitized CSV exposes MAL title ID, episode number, episode length, segment type/range, and a stable external ID. `user_id` is intentionally not copied into compiled artifacts.
+Used as the primary MAL-native timestamp source. AniSkip's current public sanitized CSV exposes MAL title ID (`anime_id`), episode number, media provider, segment type/range, votes, episode length, and submission date. The importer also remains compatible with the older sanitized export schema. User identifiers are never copied into compiled artifacts.
 
 Upstream publishes the snapshot as public/sanitized data and uses it for database seeding, but no separate explicit data license was found in the dump repository. See `ANISKIP_PUBLIC_DATA_NOTICE.md`.
 
