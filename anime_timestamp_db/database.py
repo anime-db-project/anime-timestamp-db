@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from anime_timestamp_db.config import SourceSpec
+from anime_timestamp_db.episode_numbers import normalize_episode_number
 from anime_timestamp_db.schema import EVIDENCE_SCHEMA, RUNTIME_SCHEMA, SCHEMA_VERSION
 
 
@@ -453,13 +454,13 @@ class DatabaseWriter:
         episode_id: int,
         anchor_id: int,
         provider: str,
-        episode_number: int,
+        episode_number: int | float | str,
         scope: str = "",
     ) -> None:
         anchor = int(anchor_id)
         normalized_provider = str(provider).strip().casefold()
         normalized_scope = str(scope or "").strip().upper()
-        number_text = str(int(episode_number))
+        number_text = normalize_episode_number(episode_number)
         row = self.conn.execute(
             "SELECT anchor_id FROM episodes WHERE id=?", (episode_id,)
         ).fetchone()

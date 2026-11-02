@@ -223,7 +223,7 @@ def import_aniskip(
                             anchor_id=normalized_anchor_id,
                             provider="mal",
                             scope="",
-                            episode_number=int(episode_value),
+                            episode_number=episode_value,
                         )
                     except (IdentityConflict, ValueError) as exc:
                         writer.conn.execute("ROLLBACK TO aniskip_row")
