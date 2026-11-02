@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from anime_timestamp_db.database import (
@@ -25,7 +26,7 @@ class DatabaseSchemaTests(unittest.TestCase):
             self.assertEqual(info["counts"]["segments"], 0)
             self.assertEqual(info["counts"]["consensus_segments"], 0)
 
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn:
                 user_version = conn.execute("PRAGMA user_version").fetchone()[0]
             self.assertEqual(user_version, SCHEMA_VERSION)
 
@@ -52,7 +53,7 @@ class DatabaseSchemaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "timestamps.db"
             create_runtime_database(path)
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn:
                 conn.execute("PRAGMA foreign_keys=ON")
                 source_id = conn.execute(
                     "INSERT INTO sources(source_key, display_name) VALUES('demo', 'Demo')"
