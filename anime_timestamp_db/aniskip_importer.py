@@ -198,7 +198,9 @@ def import_aniskip(
                     stats.unmapped += 1
                 else:
                     normalization_status = "mapped"
-                    normalization_reason = "native MAL episode normalized through AMDB anchor"
+                    normalization_reason = (
+                        "native MAL episode normalized through AMDB anchor"
+                    )
                     normalized_episode_key = episode_key
                     writer.conn.execute("SAVEPOINT aniskip_row")
                     try:

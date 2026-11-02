@@ -221,8 +221,7 @@ class ImporterTests(unittest.TestCase):
                     7010,
                 )
                 providers = {
-                    row[0]
-                    for row in conn.execute("SELECT provider FROM episode_ids")
+                    row[0] for row in conn.execute("SELECT provider FROM episode_ids")
                 }
                 self.assertEqual(providers, {"mal", "anilist"})
                 self.assertEqual(

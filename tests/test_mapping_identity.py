@@ -16,7 +16,9 @@ from anime_timestamp_db.mapping_identity import (
 
 
 class MappingIdentityTests(unittest.TestCase):
-    def test_decompresses_and_resolves_stable_anchor_without_copying_aliases(self) -> None:
+    def test_decompresses_and_resolves_stable_anchor_without_copying_aliases(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             raw = root / "mappings.db"
@@ -35,7 +37,9 @@ class MappingIdentityTests(unittest.TestCase):
             with raw.open("rb") as src, compressed.open("wb") as dst:
                 compressor.copy_stream(src, dst)
 
-            self.assertEqual(decompress_mapping_database(compressed, unpacked), unpacked)
+            self.assertEqual(
+                decompress_mapping_database(compressed, unpacked), unpacked
+            )
             metadata = mapping_database_metadata(unpacked)
             self.assertEqual(metadata["anchor_schema_version"], "1")
             self.assertEqual(metadata["anchor_namespace"], "amdb")

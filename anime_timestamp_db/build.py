@@ -122,9 +122,10 @@ def build_database(
 
     runtime_path = output_dir / DEFAULT_RUNTIME_DB_NAME
     evidence_path = output_dir / DEFAULT_EVIDENCE_DB_NAME
-    with MappingAnchorIndex(mapping_path) as identities, DatabaseWriter(
-        runtime_path, evidence_path, overwrite=True
-    ) as writer:
+    with (
+        MappingAnchorIndex(mapping_path) as identities,
+        DatabaseWriter(runtime_path, evidence_path, overwrite=True) as writer,
+    ):
         writer.set_metadata("generated_at", generated_at)
         writer.set_metadata("build_format_version", BUILD_FORMAT_VERSION)
         writer.set_metadata("consensus_algorithm", "weighted-median-v1")
@@ -262,7 +263,9 @@ def build_database(
             tolerance_ms=consensus_tolerance_ms,
         )
         identity_stats = identities.stats.as_dict()
-        writer.set_metadata("identity_lookup_stats", json.dumps(identity_stats, sort_keys=True))
+        writer.set_metadata(
+            "identity_lookup_stats", json.dumps(identity_stats, sort_keys=True)
+        )
         writer.finalize()
 
     audit = audit_databases(runtime_path, evidence_path)
@@ -304,9 +307,7 @@ def build_database(
             "mapping_database_schema_version": mapping_metadata.get(
                 "schema_version", ""
             ),
-            "anchor_schema_version": mapping_metadata.get(
-                "anchor_schema_version", ""
-            ),
+            "anchor_schema_version": mapping_metadata.get("anchor_schema_version", ""),
             "anchor_entities": _metadata_int(mapping_metadata, "anchor_entities"),
             "provider_aliases_copied": False,
             "lookup_stats": identity_stats,
