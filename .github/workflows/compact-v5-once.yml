@@ -1,4 +1,4 @@
-name: Compact schema v5 storage once
+name: Finalize compact v5 documentation once
 
 on:
   push:
@@ -11,9 +11,8 @@ permissions:
   contents: write
 
 jobs:
-  compact:
+  finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,8 +22,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-
-      - name: Apply compact-storage patch
+      - name: Update README and stats test
         shell: bash
         run: |
           python - <<'PY'
@@ -37,25 +35,14 @@ jobs:
                   raise SystemExit(f"expected block not found in {path}: {old[:80]!r}")
               file.write_text(text.replace(old, new, count))
 
-          replace("anime_timestamp_db/schema.py", "CREATE INDEX segments_source_idx\n    ON segments(source_id, episode_id, segment_type);\nCREATE INDEX segments_lineage_idx\n    ON segments(lineage_id, episode_id, segment_type);\nCREATE INDEX segments_duration_idx\n    ON segments(episode_id, segment_type, media_duration_ms);\n", "-- One episode-first index covers resolver and consensus scans. Source,\n-- lineage and duration filters operate on the already-small per-episode row set.\n")
-          replace("anime_timestamp_db/schema.py", "CREATE INDEX consensus_episode_idx\n    ON consensus_segments(episode_id, segment_type, cluster_index);\nCREATE INDEX consensus_duration_idx\n    ON consensus_segments(episode_id, segment_type, media_duration_ms);\n", "-- UNIQUE(episode_id, segment_type, cluster_index) already provides the\n-- episode-first index used by consensus lookups; do not duplicate it.\n")
-          replace("anime_timestamp_db/schema.py", "    payload_sha256 TEXT NOT NULL DEFAULT '',\n", "    payload_sha256 BLOB NOT NULL DEFAULT X''\n        CHECK(length(payload_sha256) IN (0, 32)),\n")
-          replace("anime_timestamp_db/schema.py", "CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);\nCREATE INDEX records_normalization_idx\n    ON records(normalization_status, snapshot_id);\n\n", "-- Evidence is append-only build provenance. With only a handful of snapshots,\n-- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.\n\n")
+          old_table = "| `timestamps.db` | 100,433,920 B | 94,126,080 B | **6.28%** |\n| `timestamps.db.zst` | 29,654,953 B | 27,778,969 B | **6.33%** |\n| `timestamps-evidence.db` | 205,631,488 B | 182,784,000 B | **11.11%** |\n| `timestamps-evidence.db.zst` | 39,729,258 B | 38,235,255 B | **3.76%** |\n| GitHub Actions artifact | 148,320,904 B | 140,511,813 B | **5.26%** |"
+          new_table = "| `timestamps.db` | 100,433,920 B | 68,227,072 B | **32.07%** |\n| `timestamps.db.zst` | 29,654,953 B | 19,824,575 B | **33.15%** |\n| `timestamps-evidence.db` | 205,631,488 B | 143,065,088 B | **30.43%** |\n| `timestamps-evidence.db.zst` | 39,729,258 B | 32,056,171 B | **19.31%** |\n| GitHub Actions artifact | 148,320,904 B | 110,099,940 B | **25.77%** |"
+          replace("README.md", old_table, new_table)
+          replace("README.md", "The main savings come from removing the duplicated title alias layer and repeated mapping metadata. In the validation databases, `title_ids` disappeared completely and the evidence `records` table shrank substantially.\n", "The main savings come from removing the duplicated title alias layer, compacting synthetic AniSkip/SkipDB IDs, storing full evidence SHA-256 digests as 32-byte BLOBs, and removing redundant SQLite indexes whose queries are already covered by episode-first/UNIQUE indexes. `title_ids` disappears completely while runtime lookup plans remain episode-indexed.\n")
 
-          replace("anime_timestamp_db/database.py", "def _prepare_path(path: Path, *, overwrite: bool) -> Path:\n", "def _sha256_blob(value: str | bytes) -> bytes:\n    if isinstance(value, bytes):\n        digest = value\n    else:\n        text = str(value or \"\").strip()\n        if not text:\n            return b\"\"\n        try:\n            digest = bytes.fromhex(text)\n        except ValueError as exc:\n            raise ValueError(\"payload_sha256 must be hexadecimal SHA-256\") from exc\n    if len(digest) not in (0, 32):\n        raise ValueError(\"payload_sha256 must contain exactly 32 bytes\")\n    return digest\n\n\ndef _prepare_path(path: Path, *, overwrite: bool) -> Path:\n")
-          replace("anime_timestamp_db/database.py", "        payload_sha256: str = \"\",\n", "        payload_sha256: str | bytes = b\"\",\n")
-          replace("anime_timestamp_db/database.py", "                payload_sha256,\n                normalization_status,\n", "                _sha256_blob(payload_sha256),\n                normalization_status,\n")
-
-          replace("anime_timestamp_db/aniskip_importer.py", "                base_segment_id = digest\n", "                base_segment_id = digest[:32]\n")
-          replace("anime_timestamp_db/aniskip_importer.py", "                base_segment_id = external_id or row_id or digest\n", "                base_segment_id = external_id or row_id or digest[:32]\n")
-          replace("anime_timestamp_db/importers.py", "        record_key = f\"skipdb:{digest}\"\n", "        record_key = f\"skipdb:{digest[:32]}\"\n")
-          replace("anime_timestamp_db/build.py", "BUILD_FORMAT_VERSION = 7\n", "BUILD_FORMAT_VERSION = 8\n")
-
-          replace("docs/SCHEMA.md", "Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.\n", "Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot. Full per-record SHA-256 digests are stored as 32-byte BLOBs rather than 64-character hex text; synthetic AniSkip/SkipDB record IDs retain a source prefix plus a 128-bit digest token while the full digest remains available in evidence.\n")
-          replace("docs/SCHEMA.md", "- stable source segment ID;\n", "- compact stable source segment ID;\n")
+          replace("tests/test_episode_index.py", "            self.assertEqual(stats.provider_episode_ids, 3)\n", "            self.assertEqual(stats.provider_episode_ids, 3)\n            self.assertEqual(stats.provider_episode_ids_inserted, 3)\n")
           PY
-
-      - name: Install and validate
+      - name: Validate
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e . ruff coverage
@@ -63,53 +50,15 @@ jobs:
           ruff check anime_timestamp_db tests scripts --select E9,F63,F7,F82
           ruff format --check anime_timestamp_db tests scripts
           python -m unittest discover -s tests -v
-
-      - name: Build real-data databases
-        run: |
-          anime-timestamp-db build \
-            --output-dir artifacts \
-            --cache-dir .build-cache/timestamp-sources
-          anime-timestamp-db audit \
-            --db artifacts/timestamps.db \
-            --evidence-db artifacts/timestamps-evidence.db \
-            > artifacts/audit.json
-          cat artifacts/audit.json
-
-      - name: Print compact sizes
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          manifest = json.loads(Path("artifacts/manifest.json").read_text())
-          for name in ("timestamps.db", "timestamps.db.zst", "timestamps-evidence.db", "timestamps-evidence.db.zst"):
-              item = manifest["artifacts"][name]
-              print(f"{name}\t{item['size_bytes']}\t{item['sha256']}")
-          PY
-
-      - name: Upload compact validation artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: anime-timestamp-db-v5-compact-${{ github.sha }}
-          path: |
-            artifacts/timestamps.db
-            artifacts/timestamps.db.zst
-            artifacts/timestamps-evidence.db
-            artifacts/timestamps-evidence.db.zst
-            artifacts/manifest.json
-            artifacts/audit.json
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Commit validated compact storage
+      - name: Commit documentation
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add anime_timestamp_db docs/SCHEMA.md
+          git add README.md tests/test_episode_index.py anime_timestamp_db/episode_index.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Compact schema v5 storage"
+          git commit -m "Document compact schema v5 results"
           git push origin HEAD:refactor/anchor-runtime-v5
