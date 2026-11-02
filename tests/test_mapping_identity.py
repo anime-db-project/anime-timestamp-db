@@ -28,9 +28,8 @@ class MappingIdentityTests(unittest.TestCase):
                     (1, "mal", "1"),
                     (2, "anilist", "101"),
                     (3, "anidb", "301"),
-                    (4, "mal", "2"),
                 ],
-                anchors={7001: [1, 2, 3], 7002: [4]},
+                anchors={7001: [1, 2, 3]},
             )
             compressor = zstd.ZstdCompressor(level=1)
             with raw.open("rb") as src, compressed.open("wb") as dst:
@@ -51,8 +50,6 @@ class MappingIdentityTests(unittest.TestCase):
                     identities.ids_for_anchor("amdb:7001"),
                     {"anidb": ["301"], "anilist": ["101"], "mal": ["1"]},
                 )
-                with self.assertRaises(AnchorResolutionConflict):
-                    identities.anchor_for_ids({"mal": "1", "mal_other": "2"})
 
     def test_conflicting_known_ids_raise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
