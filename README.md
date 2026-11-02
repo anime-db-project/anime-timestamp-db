@@ -144,15 +144,17 @@ On the same validated source snapshot:
 | Artifact | v5 staging | compact-v1 | Further reduction |
 | --- | ---: | ---: | ---: |
 | `timestamps.db` | 68,227,072 B | 49,557,504 B | **27.36%** |
-| `timestamps.db.zst` | 19,824,575 B | 13,605,427 B | **31.37%** |
+| `timestamps.db.zst` | 19,824,575 B | 13,628,419 B | **31.26%** |
 | `timestamps-evidence.db` | 143,065,088 B | 88,813,568 B | **37.92%** |
-| `timestamps-evidence.db.zst` | 32,056,175 B | 26,790,452 B | **16.43%** |
+| `timestamps-evidence.db.zst` | 32,056,175 B | 26,801,955 B | **16.39%** |
 
 The runtime distribution drops build-only reverse indexes and uniqueness B-trees while preserving resolver-critical episode indexes. `segments`, `source_segments`, and `consensus_segments` keep the same public columns and rows.
 
 The evidence distribution dictionary-encodes repeated lineage/status/reason/metadata strings behind a read-only compatibility view named `records`. Existing `SELECT ... FROM records` consumers therefore see the same columns and values, while each repeated value is stored once. `record_segments` remains a normal table with foreign-key validation.
 
 Both the strict staging databases and the final compact distributions must pass SQLite integrity, foreign-key, normalization, and consensus audits. `manifest.json` records the storage profile plus staging and distribution byte sizes.
+
+For the validated `efcedad` build, the complete GitHub Actions artifact (databases, compressed copies, manifest/audit and notices) is 85,512,233 B, down from the previous roughly 148 MB artifact while retaining the same logical schema-v5 contracts.
 
 The slightly smaller normalized coverage versus schema v4 is intentional, not data loss: rows that could not safely converge on one AMDB anchor are retained as source-only observations.
 
@@ -179,7 +181,13 @@ Normal push, scheduled, and manual database builds use short-lived GitHub Action
 
 A successful database build uploads the runtime/evidence databases, compressed variants, manifest, audit, checksums, and source-specific license/notice files.
 
-The project does **not** upload custom source-code ZIP/Zstd/7z bundles. GitHub already provides its standard `Source code (zip)` and `Source code (tar.gz)` archives for Releases automatically.
+Tagged/manual Releases additionally publish the exact tracked project source tree as three checksum-covered assets:
+
+- `zz-anime-timestamp-db-<tag>-source.zip`
+- `zz-anime-timestamp-db-<tag>-source.tar.zst`
+- `zz-anime-timestamp-db-<tag>-source.7z`
+
+The `zz-` prefix is only an asset-ordering convention so these source archives stay after the database assets. Every archive contains a normal `anime-timestamp-db-<tag>/` root directory, is built from the exact release commit with `git archive`, and has its SHA-256 appended to the same `SHA256SUMS` file as the database artifacts. GitHub's automatic `Source code (zip)` / `Source code (tar.gz)` entries remain separate.
 
 ## Local build
 
