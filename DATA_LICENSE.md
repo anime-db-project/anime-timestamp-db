@@ -1,34 +1,31 @@
-# Data licensing
+# Compiled data licensing
 
-The software in this repository is licensed separately from the timestamp data that may be compiled by it.
+The software in this repository is Apache-2.0. The compiled timestamp databases are governed separately by the terms of the upstream datasets included in a build.
 
-## Project code
+## SkipDB-derived data
 
-Project code is licensed under the Apache License 2.0; see `LICENSE`.
+The default build incorporates SkipDB data. SkipDB publishes its database under ODbL 1.0 and also attaches additional Service Provider Reciprocity terms.
 
-## Compiled timestamp databases
+A distributable build therefore carries `SKIPDB_DATA_LICENSE.txt`, an unchanged copy of SkipDB's upstream `DATA-LICENSE`. Treat that file as part of the compiled database's required licensing material. The build manifest also records the exact SkipDB source URL and SHA-256 of the downloaded dump used for the build.
 
-There is currently **no published compiled timestamp dataset** in this repository.
+Attribution: SkipDB — https://skipdb.tv/
 
-Future `timestamps.db`, `timestamps-evidence.db`, JSON/JSONL exports, manifests, and other generated data artifacts may combine records from multiple upstream datasets. Their redistribution terms must therefore be evaluated source by source before the first public data release.
+ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/
 
-The build system must preserve at least:
+Upstream terms: https://github.com/SkipDB-TV/skipdb/blob/main/DATA-LICENSE
 
-- upstream source name;
-- original evidence lineage when it differs from the import source;
-- upstream URL;
-- upstream version/revision when available;
-- retrieval timestamp;
-- SHA-256 of the imported artifact when possible;
-- upstream license/terms note;
-- record-level provenance sufficient to audit derived consensus segments.
+## Baha Anime Skip
 
-A source must not be added to a public compiled release merely because its data is technically accessible. Its license or redistribution terms must first be documented in `THIRD_PARTY_NOTICES.md` and in release metadata.
+The builder consumes the checked-in Baha Anime Skip database from `JacobLinCool/baha-anime-skip`. The upstream repository is MIT-licensed. `BAHA_LICENSE.txt` is included with database artifacts.
 
-## Aggregators and mirrors
+## AniBridge
 
-An aggregator is not automatically an independent evidence source. If an imported dataset republishes AniSkip, Anime Skip, or another provider's timings, the original lineage must be retained so derived consensus logic does not double-count the same evidence.
+AniBridge's published mapping file is used at build time to establish safe episode identities. The AniBridge repository is MIT-licensed; `ANIBRIDGE_LICENSE.txt` is included with artifacts. AniBridge's mapping payload itself aggregates upstream mapping sources, so its own provenance documentation should also be consulted for downstream redistribution decisions.
 
-## Future policy
+## Excluded sources
 
-Before the first data-bearing release, this document will be expanded into a per-source compatibility matrix. If the combined database is subject to a share-alike database license, the release will carry the required license and attribution files explicitly.
+Public downloadability is not treated as redistribution permission. `open-anime-timestamps` is excluded from the default distributable build because no explicit upstream license was found during integration.
+
+## Build provenance
+
+Every build records source URLs, final redirected URLs, retrieval timestamps, hashes, byte sizes, ETag/Last-Modified values when available, source roles, and license notes in `manifest.json` and/or `timestamps-evidence.db`.

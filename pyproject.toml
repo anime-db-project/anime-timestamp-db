@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anime-timestamp-db"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build and distribute provenance-aware anime episode timestamp databases"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
 authors = [{name = "anime-db-project"}]
-dependencies = []
+dependencies = [
+  "httpx==0.28.1",
+  "zstandard==0.25.0",
+]
 
 [project.scripts]
 anime-timestamp-db = "anime_timestamp_db.__main__:main"

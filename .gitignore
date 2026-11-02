@@ -11,7 +11,7 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 
-# Generated database/release artifacts
+# Generated databases, downloads and build artifacts
 *.db
 *.db-shm
 *.db-wal
@@ -20,3 +20,4 @@ htmlcov/
 *.zst
 artifacts/
 data/
+.build-cache/

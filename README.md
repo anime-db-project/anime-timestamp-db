@@ -2,31 +2,79 @@
 
 # Anime Timestamp DB
 
-**Anime Timestamp DB** is a standalone SQLite database project for collecting, normalizing, auditing, and distributing anime episode timestamp segments such as openings, endings, recaps, previews, credits, and other skippable ranges.
+[![CI](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml)
+[![Database build](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
+[![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Code license](https://img.shields.io/badge/Code-Apache%202.0-D22128.svg)](LICENSE)
+[![Data license](https://img.shields.io/badge/Data-ODbL%201.0%20%2B%20upstream%20terms-555555.svg)](DATA_LICENSE.md)
 
-The project is designed as the timestamp counterpart to [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db): consumers should eventually download a prebuilt `timestamps.db` release asset and query it locally instead of depending on many runtime APIs.
+**Anime Timestamp DB** builds an auditable SQLite database of anime episode skip segments: openings, endings, recaps, previews, and other ranges.
 
-## Current status
+It is the timestamp counterpart to [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db). Source quirks stay in the builder; consumers get one stable local SQLite interface.
 
-The repository is in **schema-first bootstrap**. The database model, provenance rules, local resolver, tests, and CI are being stabilized before any network API adapters or crawlers are added.
+## Real data inputs
 
-No external timestamp dataset is imported by the current code yet.
+The default build uses reproducible public bulk/static files. It does not call runtime anime timestamp APIs and does not crawl streaming sites.
 
-## Design goals
+| Input | Role | Runtime behavior |
+| --- | --- | --- |
+| [SkipDB](https://github.com/SkipDB-TV/skipdb) | Timestamp dataset | `approved` rows enter runtime only when AniBridge gives a safe one-to-one anime episode mapping. Other public statuses remain evidence-only. |
+| [AniBridge mappings](https://github.com/anibridge/anibridge-mappings) | Episode identity bridge | Maps IMDb show season/episode numbering to MAL/AniList/AniDB. Split/combined ratio mappings are deliberately not projected. |
+| [Baha Anime Skip](https://github.com/JacobLinCool/baha-anime-skip) | Timestamp dataset | Stored by Bahamut `videoSn` as source-addressable ranges. No fake MAL/AniList identity is invented. |
 
-- One compact local SQLite database for runtime consumers.
-- Source-specific timestamps remain available; data is not flattened into one anonymous answer.
-- Provenance distinguishes the **import source** from the **independent evidence lineage**.
-- Duplicate aggregation does not create duplicate votes. For example, an AniSkip timestamp republished by another dataset remains AniSkip evidence.
-- Title identifiers are queryable through provider/ID pairs and can later be normalized with `anime-mapping-db` during builds.
-- Episodes keep a source-neutral local key plus source-specific episode references.
-- Raw/import audit metadata is kept outside the runtime lookup path in a separate evidence database.
-- Consensus timestamps are derived data and always retain links to their contributing source segments.
-- Database files are release artifacts, not files committed directly to the repository.
+`open-anime-timestamps` is intentionally excluded from distributable builds while its upstream repository has no explicit license.
 
-## Planned release artifacts
+## Runtime model
 
-Once import/build behavior is stable, releases are expected to contain at least:
+`timestamps.db` contains two honest levels of coverage:
+
+- `segments`: timestamps normalized to an anime title and episode;
+- `source_segments`: valid timestamps whose upstream episode key is known but which cannot be cross-database-normalized safely.
+
+Important tables:
+
+- `titles`, `title_ids`: normalized title identity;
+- `episodes`: local episode identity;
+- `episode_ids`: provider-specific episode numbering and AniDB scopes;
+- `episode_refs`: timestamp-source episode references;
+- `segments`: original approved normalized observations;
+- `source_segments`: source-addressable ranges such as Baha `videoSn`;
+- `consensus_segments`, `consensus_members`: derived best ranges with complete membership traceability;
+- `sources`, `lineages`: import provenance and independent evidence lineage.
+
+All times are stored as integer milliseconds. See [`docs/SCHEMA.md`](docs/SCHEMA.md).
+
+## Evidence database
+
+`timestamps-evidence.db` keeps build/audit material out of the runtime hot path. It records source snapshot URLs and hashes, retrieval metadata, upstream record status, normalization result/reason, source identifiers, scores/votes, and normalized timestamp ranges.
+
+SkipDB `submitted_by` identifiers are deliberately not copied into the compiled evidence database. A whole-record SHA-256 is enough to distinguish upstream observations without republishing contributor identifiers.
+
+## Mapping safety
+
+The builder prefers missing data over a plausible but wrong mapping.
+
+- AniBridge ratio mappings (`|2`, `|-2`, etc.) are skipped because they represent split/combined episode granularity.
+- Conflicting title identities are suppressed instead of merged heuristically.
+- MAL, AniList and AniDB episode numbers are stored separately in `episode_ids`; one provider's numbering is never assumed to equal another's.
+- AniDB scope is preserved for non-regular episodes.
+- IMDb TV season descriptors are not promoted to global anime-title IDs because one TV season can span multiple independently catalogued anime entries.
+- Pending/rejected SkipDB rows never enter runtime `segments`.
+- Baha remains source-only until a bulk, auditable episode mapping exists.
+
+## Consensus
+
+Source observations are never overwritten. `weighted-median-v1` materializes consensus separately and links every consensus row back to its exact members.
+
+The algorithm groups by normalized episode and segment type, separates obviously different media cuts using total duration, clusters close/high-overlap ranges, uses quality/vote-aware weighted medians for boundaries, and stores member/source/lineage counts plus an agreement confidence score.
+
+The default boundary tolerance is 5 seconds and is stored in metadata and the build manifest.
+
+## Actions artifacts, not Releases
+
+For now database builds are uploaded only as GitHub Actions artifacts. No database Release is created.
+
+`.github/workflows/build.yml` runs on pushes to `main`, manual dispatch, and a daily schedule. A successful build uploads for 14 days:
 
 ```text
 timestamps.db
@@ -34,101 +82,119 @@ timestamps.db.zst
 timestamps-evidence.db
 timestamps-evidence.db.zst
 manifest.json
+audit.json
 SHA256SUMS
+DATA_LICENSE.md
+THIRD_PARTY_NOTICES.md
+SKIPDB_DATA_LICENSE.txt
+BAHA_LICENSE.txt
+ANIBRIDGE_LICENSE.txt
 ```
 
-The `.db` extension is intentional and matches `anime-mapping-db`. SQLite does not require a specific extension; `.db`, `.sqlite`, and `.sqlite3` can all contain the same SQLite file format.
+This gives us real build history without turning every schema experiment into a permanent GitHub Release.
 
-## Runtime model
-
-The runtime database is centered around these entities:
-
-```text
-sources ───────────────┐
-                      │
-lineages ──────────────┼── segments ── consensus_members ── consensus_segments
-                      │       │
-                      │       ▼
-titles ── title_ids ──┴── episodes ── episode_refs
-```
-
-### Sources vs lineages
-
-This distinction is important.
-
-- `source` means **where the record was imported from**.
-- `lineage` means **who originally produced the independent timing evidence**.
-
-Example:
-
-```text
-source = open-anime-timestamps
-lineage = aniskip
-```
-
-means that the row came from an `open-anime-timestamps` dump but the timing itself originated from AniSkip. A future consensus builder must count the lineage, not the number of mirrors/aggregators that republish it.
-
-## Episode keys
-
-`episodes.episode_key` is an opaque, normalized local key rather than a hard-coded integer-only episode number. Importers will later be responsible for generating stable keys such as regular episodes, specials, or season-scoped episodes without forcing every upstream database into one numbering convention.
-
-Numeric columns are optional helpers for common cases and sorting; source-specific numbering is preserved separately in `episode_refs`.
-
-## Segment types
-
-`segment_type` is stored as normalized text instead of a closed SQL enum so new upstream segment classes do not require a schema migration. Initial normalized names are expected to include:
-
-```text
-opening
-ending
-mixed-opening
-mixed-ending
-recap
-preview
-credits
-other
-```
-
-## Why a separate evidence database?
-
-Runtime consumers need fast episode and segment lookup, not import history. Build/audit information therefore belongs in `timestamps-evidence.db`, while `timestamps.db` remains focused on lookup data.
-
-The evidence database is intended to record source snapshots, hashes, upstream versions, record keys, lineage, and normalized observed segment ranges. This follows the same runtime/evidence separation used by `anime-mapping-db`.
-
-## Deferred until the schema is stable
-
-The following are intentionally **not implemented yet**:
-
-- AniSkip API ingestion
-- Anime Skip GraphQL ingestion
-- IntroDB / PublicMetaDB / TheIntroDB ingestion
-- any crawler or scraper
-- automatic consensus generation
-- GitHub release publishing
-
-The first external inputs should be reproducible bulk/local datasets where possible, for example Baha Anime Skip, `open-anime-timestamps`, and SkipDB. API-only sources can be added after the storage and provenance model has survived real dump imports.
-
-## Development
+## Local build
 
 Requires Python 3.11+.
 
 ```bash
 python -m pip install -e .
-python -m unittest discover -s tests -v
+anime-timestamp-db build --output-dir artifacts
 ```
 
-Create empty schema files:
+Audit an existing build:
 
 ```bash
-anime-timestamp-db init --db timestamps.db --evidence-db timestamps-evidence.db
+anime-timestamp-db audit \
+  --db artifacts/timestamps.db \
+  --evidence-db artifacts/timestamps-evidence.db
 ```
 
-Inspect a runtime database:
+## Lookup
+
+Normalized source observations:
 
 ```bash
-anime-timestamp-db inspect --db timestamps.db
+anime-timestamp-db lookup \
+  --db artifacts/timestamps.db \
+  --provider mal \
+  --id 5114 \
+  --episode 1
 ```
+
+Consensus:
+
+```bash
+anime-timestamp-db lookup \
+  --db artifacts/timestamps.db \
+  --provider mal \
+  --id 5114 \
+  --episode 1 \
+  --consensus
+```
+
+If playback duration is known, it can be used to rank the closest media cut:
+
+```bash
+anime-timestamp-db lookup \
+  --db artifacts/timestamps.db \
+  --provider mal \
+  --id 5114 \
+  --episode 1 \
+  --duration-ms 1440000 \
+  --consensus
+```
+
+AniDB specials can use an explicit scope:
+
+```bash
+anime-timestamp-db lookup \
+  --db artifacts/timestamps.db \
+  --provider anidb \
+  --id 12345 \
+  --episode 1 \
+  --scope S
+```
+
+Baha source lookup:
+
+```bash
+anime-timestamp-db source-lookup \
+  --db artifacts/timestamps.db \
+  --source baha \
+  --episode-key 123456
+```
+
+Python:
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver("artifacts/timestamps.db")
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+key = resolver.episode_key("mal", "5114", 1)
+consensus = resolver.get_consensus("mal", "5114", key) if key else []
+baha = resolver.get_source_segments("baha", "123456")
+```
+
+## Audit contract
+
+Every Actions build must pass more than `PRAGMA integrity_check`:
+
+- zero foreign-key errors;
+- no invalid timestamp ranges;
+- consensus member counts must match their membership table;
+- no normalized episode may be left without a runtime segment;
+- every provider-specific episode ID must belong to the same normalized title;
+- both normalized and source-only real-data coverage must be non-empty;
+- evidence records and evidence segments must be non-empty.
+
+The exact counts are written to `audit.json` and `manifest.json`.
+
+## File extension
+
+The project uses `timestamps.db` for consistency with `anime-mapping-db` and `mappings.db`. SQLite does not assign meaning to `.db`, `.sqlite`, or `.sqlite3`.
 
 ## Licensing
 
-Project code is licensed under Apache-2.0. Dataset licensing is separate and will follow the terms of each upstream source; see `DATA_LICENSE.md` before distributing compiled data.
+Project code is Apache-2.0. Compiled data follows upstream database terms. SkipDB is the restrictive component of the default data build: read [`DATA_LICENSE.md`](DATA_LICENSE.md) and the bundled upstream `SKIPDB_DATA_LICENSE.txt` before redistributing a compiled database.
