@@ -7,11 +7,37 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from anime_timestamp_db.config import SourceSpec
+from anime_timestamp_db.episode_numbers import normalize_episode_number
 from anime_timestamp_db.schema import EVIDENCE_SCHEMA, RUNTIME_SCHEMA, SCHEMA_VERSION
 
 
 class IdentityConflict(RuntimeError):
     pass
+
+
+def _json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _sha256_blob(value: str | bytes) -> bytes:
+    if isinstance(value, bytes):
+        digest = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return b""
+        try:
+            digest = bytes.fromhex(text)
+        except ValueError as exc:
+            raise ValueError("payload_sha256 must be hexadecimal SHA-256") from exc
+    if len(digest) not in (0, 32):
+        raise ValueError("payload_sha256 must contain exactly 32 bytes")
+    return digest
 
 
 def _prepare_path(path: Path, *, overwrite: bool) -> Path:
@@ -51,6 +77,7 @@ def _initialize_database(
                 ("schema_version", str(SCHEMA_VERSION)),
                 ("database_role", role),
                 ("project", "anime-timestamp-db"),
+                ("identity_namespace", "amdb"),
             ),
         )
         conn.commit()
@@ -104,8 +131,8 @@ def inspect_database(path: Path) -> dict[str, Any]:
                 "sources",
                 "lineages",
                 "titles",
-                "title_ids",
                 "episodes",
+                "episode_ids",
                 "episode_refs",
                 "segments",
                 "source_segments",
@@ -165,13 +192,12 @@ class DatabaseWriter:
         self.evidence.close()
 
     def set_metadata(self, key: str, value: object) -> None:
+        payload = (str(key), str(value))
         self.conn.execute(
-            "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)",
-            (str(key), str(value)),
+            "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)", payload
         )
         self.evidence.execute(
-            "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)",
-            (str(key), str(value)),
+            "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)", payload
         )
 
     def source_id(self, spec: SourceSpec) -> int:
@@ -248,7 +274,7 @@ class DatabaseWriter:
                 download.etag,
                 download.last_modified,
                 spec.license_note,
-                json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True),
+                _json(metadata or {}),
             ),
         )
         assert cursor.lastrowid is not None
@@ -272,23 +298,25 @@ class DatabaseWriter:
         quality_score: float | None = None,
         votes_up: int = 0,
         votes_down: int = 0,
-        payload_sha256: str = "",
+        payload_sha256: str | bytes = b"",
         normalization_status: str = "unprocessed",
         normalization_reason: str = "",
-        normalized_provider: str = "",
-        normalized_id: str = "",
+        normalized_anchor_id: int | None = None,
         normalized_episode_key: str = "",
         metadata: dict[str, object] | None = None,
     ) -> int:
+        anchor = int(normalized_anchor_id) if normalized_anchor_id is not None else None
+        if anchor is not None and anchor <= 0:
+            raise ValueError("normalized_anchor_id must be positive")
         cursor = self.evidence.execute(
             """
             INSERT INTO records(
                 snapshot_id, record_key, lineage_key, source_title_key,
                 source_episode_key, source_status, quality_score, votes_up,
                 votes_down, payload_sha256, normalization_status,
-                normalization_reason, normalized_provider, normalized_id,
+                normalization_reason, normalized_anchor_id,
                 normalized_episode_key, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 snapshot_id,
@@ -300,13 +328,12 @@ class DatabaseWriter:
                 quality_score,
                 max(0, int(votes_up)),
                 max(0, int(votes_down)),
-                payload_sha256,
+                _sha256_blob(payload_sha256),
                 normalization_status,
                 normalization_reason,
-                normalized_provider,
-                normalized_id,
+                anchor,
                 normalized_episode_key,
-                json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True),
+                _json(metadata or {}),
             ),
         )
         assert cursor.lastrowid is not None
@@ -341,87 +368,37 @@ class DatabaseWriter:
 
     def get_or_create_title(
         self,
-        ids: dict[str, str],
+        anchor_id: int,
         *,
         display_title: str = "",
     ) -> int:
-        cleaned = {
-            str(provider).strip().casefold(): str(external_id).strip()
-            for provider, external_id in ids.items()
-            if str(provider).strip() and str(external_id).strip()
-        }
-        if not cleaned:
-            raise ValueError("At least one title ID is required")
-
-        placeholders = ",".join("(?, ?)" for _ in cleaned)
-        params: list[str] = []
-        for provider, external_id in cleaned.items():
-            params.extend((provider, external_id))
-        existing = {
-            int(row[0])
-            for row in self.conn.execute(
-                f"""
-                SELECT title_id FROM title_ids
-                WHERE (provider, external_id) IN ({placeholders})
-                """,
-                params,
-            )
-        }
-        if len(existing) > 1:
-            raise IdentityConflict(
-                f"IDs resolve to multiple existing titles: {cleaned}"
-            )
-
-        if existing:
-            title_id = next(iter(existing))
-        else:
-            priority = ("mal", "anilist", "anidb")
-            canonical_provider = next(
-                (p for p in priority if p in cleaned), sorted(cleaned)[0]
-            )
-            canonical_id = cleaned[canonical_provider]
-            cursor = self.conn.execute(
-                """
-                INSERT INTO titles(canonical_provider, canonical_id, display_title)
-                VALUES (?, ?, ?)
-                """,
-                (canonical_provider, canonical_id, display_title),
-            )
-            assert cursor.lastrowid is not None
-            title_id = int(cursor.lastrowid)
-
-        for provider, external_id in cleaned.items():
-            row = self.conn.execute(
-                "SELECT title_id FROM title_ids WHERE provider=? AND external_id=?",
-                (provider, external_id),
-            ).fetchone()
-            if row is not None and int(row[0]) != title_id:
-                raise IdentityConflict(
-                    f"{provider}:{external_id} already belongs to title {row[0]}"
-                )
-            self.conn.execute(
-                "INSERT OR IGNORE INTO title_ids(provider, external_id, title_id) VALUES (?, ?, ?)",
-                (provider, external_id, title_id),
-            )
+        anchor = int(anchor_id)
+        if anchor <= 0:
+            raise ValueError("anchor_id must be positive")
+        self.conn.execute(
+            "INSERT OR IGNORE INTO titles(anchor_id, display_title) VALUES (?, ?)",
+            (anchor, display_title),
+        )
         if display_title:
             self.conn.execute(
-                "UPDATE titles SET display_title=? WHERE id=? AND display_title=''",
-                (display_title, title_id),
+                "UPDATE titles SET display_title=? WHERE anchor_id=? AND display_title=''",
+                (display_title, anchor),
             )
-        return title_id
+        return anchor
 
     def get_or_create_episode(
         self,
-        title_id: int,
+        anchor_id: int,
         *,
         episode_key: str,
         episode_number: int | float | None,
         is_special: bool = False,
         duration_ms: int | None = None,
     ) -> int:
+        anchor = int(anchor_id)
         row = self.conn.execute(
-            "SELECT id, duration_ms FROM episodes WHERE title_id=? AND episode_key=?",
-            (title_id, episode_key),
+            "SELECT id, duration_ms FROM episodes WHERE anchor_id=? AND episode_key=?",
+            (anchor, episode_key),
         ).fetchone()
         if row is not None:
             episode_id = int(row[0])
@@ -434,12 +411,12 @@ class DatabaseWriter:
         cursor = self.conn.execute(
             """
             INSERT INTO episodes(
-                title_id, episode_key, episode_number_text, episode_number,
+                anchor_id, episode_key, episode_number_text, episode_number,
                 is_special, duration_ms
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                title_id,
+                anchor,
                 episode_key,
                 "" if episode_number is None else str(episode_number),
                 episode_number,
@@ -491,55 +468,41 @@ class DatabaseWriter:
         self,
         *,
         episode_id: int,
+        anchor_id: int,
         provider: str,
-        title_external_id: str,
-        episode_number: int,
+        episode_number: int | float | str,
         scope: str = "",
     ) -> None:
+        anchor = int(anchor_id)
         normalized_provider = str(provider).strip().casefold()
-        normalized_id = str(title_external_id).strip()
         normalized_scope = str(scope or "").strip().upper()
-        number_text = str(int(episode_number))
-        title_match = self.conn.execute(
-            """
-            SELECT 1
-            FROM episodes ep
-            JOIN title_ids tid ON tid.title_id=ep.title_id
-            WHERE ep.id=? AND tid.provider=? AND tid.external_id=?
-            """,
-            (episode_id, normalized_provider, normalized_id),
-        ).fetchone()
-        if title_match is None:
-            raise IdentityConflict(
-                f"episode {episode_id} does not belong to "
-                f"{normalized_provider}:{normalized_id}"
-            )
+        number_text = normalize_episode_number(episode_number)
         row = self.conn.execute(
+            "SELECT anchor_id FROM episodes WHERE id=?", (episode_id,)
+        ).fetchone()
+        if row is None or int(row[0]) != anchor:
+            raise IdentityConflict(
+                f"episode {episode_id} does not belong to amdb:{anchor}"
+            )
+        existing = self.conn.execute(
             """
             SELECT episode_id FROM episode_ids
-            WHERE provider=? AND title_external_id=? AND scope=?
-              AND episode_number_text=?
+            WHERE anchor_id=? AND provider=? AND scope=? AND episode_number_text=?
             """,
-            (normalized_provider, normalized_id, normalized_scope, number_text),
+            (anchor, normalized_provider, normalized_scope, number_text),
         ).fetchone()
-        if row is not None and int(row[0]) != episode_id:
+        if existing is not None and int(existing[0]) != episode_id:
             raise IdentityConflict(
                 "provider episode identity resolves to multiple normalized episodes: "
-                f"{normalized_provider}:{normalized_id}:{normalized_scope}:{number_text}"
+                f"amdb:{anchor}:{normalized_provider}:{normalized_scope}:{number_text}"
             )
         self.conn.execute(
             """
             INSERT OR IGNORE INTO episode_ids(
-                provider, title_external_id, scope, episode_number_text, episode_id
+                anchor_id, provider, scope, episode_number_text, episode_id
             ) VALUES (?, ?, ?, ?, ?)
             """,
-            (
-                normalized_provider,
-                normalized_id,
-                normalized_scope,
-                number_text,
-                episode_id,
-            ),
+            (anchor, normalized_provider, normalized_scope, number_text, episode_id),
         )
 
     def add_segment(

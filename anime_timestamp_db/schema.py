@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEFAULT_RUNTIME_DB_NAME = "timestamps.db"
 DEFAULT_EVIDENCE_DB_NAME = "timestamps-evidence.db"
 
@@ -26,52 +26,41 @@ CREATE TABLE lineages (
     description TEXT NOT NULL DEFAULT ''
 );
 
+-- Stable title identity comes from anime-mapping-db. We intentionally do not
+-- copy provider aliases into this database: anchor_id is the cross-project key.
 CREATE TABLE titles (
-    id INTEGER PRIMARY KEY,
-    canonical_provider TEXT NOT NULL,
-    canonical_id TEXT NOT NULL,
-    display_title TEXT NOT NULL DEFAULT '',
-    UNIQUE(canonical_provider, canonical_id)
+    anchor_id INTEGER PRIMARY KEY CHECK(anchor_id > 0),
+    display_title TEXT NOT NULL DEFAULT ''
 );
-
-CREATE TABLE title_ids (
-    provider TEXT NOT NULL,
-    external_id TEXT NOT NULL,
-    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
-    PRIMARY KEY(provider, external_id)
-) WITHOUT ROWID;
-
-CREATE INDEX title_ids_title_idx
-    ON title_ids(title_id, provider, external_id);
 
 CREATE TABLE episodes (
     id INTEGER PRIMARY KEY,
-    title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+    anchor_id INTEGER NOT NULL REFERENCES titles(anchor_id) ON DELETE CASCADE,
     episode_key TEXT NOT NULL,
     episode_number_text TEXT NOT NULL DEFAULT '',
     episode_number REAL,
     is_special INTEGER NOT NULL DEFAULT 0 CHECK(is_special IN (0, 1)),
     duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms > 0),
-    UNIQUE(title_id, episode_key)
+    UNIQUE(anchor_id, episode_key)
 );
 
-CREATE INDEX episodes_title_idx
-    ON episodes(title_id, episode_number, episode_key);
+CREATE INDEX episodes_anchor_idx
+    ON episodes(anchor_id, episode_number, episode_key);
 
--- Provider-specific episode numbering. This is separate from title_ids because
--- AniDB special scopes and TV/anime numbering can differ even when title identity
--- is known.
+-- Provider-specific episode numbering is still useful because MAL/AniList/AniDB
+-- can number the same playback unit differently. The provider title ID is not
+-- duplicated here: anchor_id already identifies the normalized title.
 CREATE TABLE episode_ids (
+    anchor_id INTEGER NOT NULL REFERENCES titles(anchor_id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
-    title_external_id TEXT NOT NULL,
     scope TEXT NOT NULL DEFAULT '',
     episode_number_text TEXT NOT NULL,
     episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
-    PRIMARY KEY(provider, title_external_id, scope, episode_number_text)
+    PRIMARY KEY(anchor_id, provider, scope, episode_number_text)
 ) WITHOUT ROWID;
 
 CREATE INDEX episode_ids_episode_idx
-    ON episode_ids(episode_id, provider, title_external_id);
+    ON episode_ids(episode_id, provider, anchor_id);
 
 CREATE TABLE episode_refs (
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -108,12 +97,8 @@ CREATE TABLE segments (
 
 CREATE INDEX segments_episode_idx
     ON segments(episode_id, segment_type, start_ms, end_ms);
-CREATE INDEX segments_source_idx
-    ON segments(source_id, episode_id, segment_type);
-CREATE INDEX segments_lineage_idx
-    ON segments(lineage_id, episode_id, segment_type);
-CREATE INDEX segments_duration_idx
-    ON segments(episode_id, segment_type, media_duration_ms);
+-- One episode-first index covers resolver and consensus scans. Source,
+-- lineage and duration filters operate on the already-small per-episode row set.
 
 -- Timestamp datasets such as Baha Anime Skip can have accurate ranges but no
 -- reusable cross-database episode identity. Keep those ranges queryable by the
@@ -152,10 +137,8 @@ CREATE TABLE consensus_segments (
     UNIQUE(episode_id, segment_type, cluster_index)
 );
 
-CREATE INDEX consensus_episode_idx
-    ON consensus_segments(episode_id, segment_type, cluster_index);
-CREATE INDEX consensus_duration_idx
-    ON consensus_segments(episode_id, segment_type, media_duration_ms);
+-- UNIQUE(episode_id, segment_type, cluster_index) already provides the
+-- episode-first index used by consensus lookups; do not duplicate it.
 
 CREATE TABLE consensus_members (
     consensus_id INTEGER NOT NULL REFERENCES consensus_segments(id) ON DELETE CASCADE,
@@ -204,19 +187,20 @@ CREATE TABLE records (
     quality_score REAL,
     votes_up INTEGER NOT NULL DEFAULT 0,
     votes_down INTEGER NOT NULL DEFAULT 0,
-    payload_sha256 TEXT NOT NULL DEFAULT '',
+    payload_sha256 BLOB NOT NULL DEFAULT X''
+        CHECK(length(payload_sha256) IN (0, 32)),
     normalization_status TEXT NOT NULL DEFAULT 'unprocessed',
     normalization_reason TEXT NOT NULL DEFAULT '',
-    normalized_provider TEXT NOT NULL DEFAULT '',
-    normalized_id TEXT NOT NULL DEFAULT '',
+    normalized_anchor_id INTEGER CHECK(
+        normalized_anchor_id IS NULL OR normalized_anchor_id > 0
+    ),
     normalized_episode_key TEXT NOT NULL DEFAULT '',
     metadata_json TEXT NOT NULL DEFAULT '{}',
     UNIQUE(snapshot_id, record_key, lineage_key)
 );
 
-CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);
-CREATE INDEX records_normalization_idx
-    ON records(normalization_status, snapshot_id);
+-- Evidence is append-only build provenance. With only a handful of snapshots,
+-- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.
 
 CREATE TABLE record_segments (
     record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,

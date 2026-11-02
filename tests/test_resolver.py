@@ -16,22 +16,27 @@ class ResolverTests(unittest.TestCase):
             root = Path(tmp)
             runtime = root / "runtime.db"
             evidence = root / "evidence.db"
+            anchor = 42
             with DatabaseWriter(runtime, evidence) as writer:
                 skip = writer.source_id(SKIPDB)
                 skip_lineage = writer.lineage_id("skipdb", "SkipDB")
                 baha = writer.source_id(BAHA)
                 baha_lineage = writer.lineage_id("baha", "Baha")
-                title = writer.get_or_create_title({"mal": "1", "anilist": "2"})
+                writer.get_or_create_title(anchor)
                 episode = writer.get_or_create_episode(
-                    title, episode_key="ep:1", episode_number=1
+                    anchor, episode_key="ep:1", episode_number=1
                 )
-                writer.conn.executemany(
-                    """
-                    INSERT INTO episode_ids(
-                        provider, title_external_id, scope, episode_number_text, episode_id
-                    ) VALUES (?, ?, '', ?, ?)
-                    """,
-                    (("mal", "1", "1", episode), ("anilist", "2", "1", episode)),
+                writer.add_episode_id(
+                    episode_id=episode,
+                    anchor_id=anchor,
+                    provider="mal",
+                    episode_number=1,
+                )
+                writer.add_episode_id(
+                    episode_id=episode,
+                    anchor_id=anchor,
+                    provider="anilist",
+                    episode_number=1,
                 )
                 writer.add_segment(
                     episode_id=episode,
@@ -55,14 +60,18 @@ class ResolverTests(unittest.TestCase):
                     end_ms=99000,
                 )
                 rebuild_consensus(writer.conn)
+
             resolver = TimestampResolver(runtime)
-            self.assertEqual(resolver.episode_key("mal", "1", 1), "ep:1")
-            self.assertEqual(resolver.title_ids("mal", "1")["anilist"], ["2"])
+            self.assertEqual(resolver.anchor_for("amdb", "42"), "amdb:42")
+            self.assertEqual(resolver.episode_key("amdb", "42", 1), "ep:1")
+            self.assertEqual(resolver.title_ids("amdb", "42"), {"amdb": ["42"]})
             self.assertEqual(
-                resolver.get_segments("mal", "1", "ep:1")[0].source, "skipdb"
+                resolver.get_segments_by_anchor("amdb:42", "ep:1")[0].source,
+                "skipdb",
             )
             self.assertEqual(
-                resolver.get_consensus("mal", "1", "ep:1")[0].member_count, 1
+                resolver.get_consensus_by_anchor("amdb:42", "ep:1")[0].member_count,
+                1,
             )
             self.assertEqual(
                 resolver.get_source_segments("baha", "999")[0].start_ms, 9000

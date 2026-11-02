@@ -1,10 +1,10 @@
 from anime_timestamp_db.audit import audit_databases
-from anime_timestamp_db.pipeline import build_database
 from anime_timestamp_db.database import (
     create_evidence_database,
     create_runtime_database,
     inspect_database,
 )
+from anime_timestamp_db.pipeline import build_database
 from anime_timestamp_db.resolver import (
     ConsensusSegment,
     Segment,
@@ -26,4 +26,4 @@ __all__ = [
     "inspect_database",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

@@ -8,6 +8,10 @@ from pathlib import Path
 from anime_timestamp_db.anibridge import AniBridgeIndex, EpisodeMappingResult
 from anime_timestamp_db.config import OPEN_ANIME_TIMESTAMPS
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
+from anime_timestamp_db.mapping_identity import (
+    AnchorResolutionConflict,
+    MappingAnchorIndex,
+)
 
 
 _LINEAGES = {
@@ -132,7 +136,9 @@ def _lineage(
     )
 
 
-def _anchor(result: EpisodeMappingResult) -> tuple[str, str, int] | None:
+def _episode_anchor(result: EpisodeMappingResult) -> tuple[str, str, int] | None:
+    """Choose a deterministic provider episode number, not a title identity."""
+
     by_provider: dict[str, set[tuple[str, int]]] = {}
     for target in result.targets:
         by_provider.setdefault(target.descriptor.provider, set()).add(
@@ -148,55 +154,60 @@ def _anchor(result: EpisodeMappingResult) -> tuple[str, str, int] | None:
     return None
 
 
-def _attach_target_ids(
-    writer: DatabaseWriter,
+def _resolve_title_anchor(
+    identities: MappingAnchorIndex,
     *,
-    title_id: int,
+    source_anidb_id: str,
+    result: EpisodeMappingResult,
+) -> int | None:
+    ids: dict[str, str] = {"anidb": source_anidb_id}
+    for target in result.targets:
+        provider = target.descriptor.provider
+        external_id = target.descriptor.external_id
+        previous = ids.get(provider)
+        if previous is not None and previous != external_id:
+            # Multiple IDs of one provider are not a safe title identity.
+            continue
+        ids[provider] = external_id
+    return identities.anchor_for_ids(ids)
+
+
+def _attach_provider_numbering(
+    writer: DatabaseWriter,
+    identities: MappingAnchorIndex,
+    *,
+    anchor_id: int,
     episode_id: int,
-    anchor_provider: str,
-    anchor_id: str,
     source_anidb_id: str,
     source_episode: int,
     result: EpisodeMappingResult,
 ) -> None:
-    aliases: list[tuple[str, str]] = [("anidb", source_anidb_id)]
-    aliases.extend(
-        (target.descriptor.provider, target.descriptor.external_id)
-        for target in result.targets
-    )
-    for provider, external_id in aliases:
+    if identities.anchor_for("anidb", source_anidb_id) == anchor_id:
         try:
-            resolved = writer.get_or_create_title(
-                {anchor_provider: anchor_id, provider: external_id}
+            writer.add_episode_id(
+                episode_id=episode_id,
+                anchor_id=anchor_id,
+                provider="anidb",
+                scope="R",
+                episode_number=source_episode,
             )
         except IdentityConflict:
-            continue
-        if resolved != title_id:
-            continue
-
-    try:
-        writer.add_episode_id(
-            episode_id=episode_id,
-            provider="anidb",
-            title_external_id=source_anidb_id,
-            scope="R",
-            episode_number=source_episode,
-        )
-    except IdentityConflict:
-        pass
+            pass
 
     for target in result.targets:
-        belongs = writer.conn.execute(
-            "SELECT title_id FROM title_ids WHERE provider=? AND external_id=?",
-            (target.descriptor.provider, target.descriptor.external_id),
-        ).fetchone()
-        if belongs is None or int(belongs[0]) != title_id:
+        if (
+            identities.anchor_for(
+                target.descriptor.provider,
+                target.descriptor.external_id,
+            )
+            != anchor_id
+        ):
             continue
         try:
             writer.add_episode_id(
                 episode_id=episode_id,
+                anchor_id=anchor_id,
                 provider=target.descriptor.provider,
-                title_external_id=target.descriptor.external_id,
                 scope=target.descriptor.scope or "",
                 episode_number=target.episode_number,
             )
@@ -210,6 +221,7 @@ def import_open_anime_timestamps(
     writer: DatabaseWriter,
     snapshot_id: int,
     anibridge: AniBridgeIndex,
+    identities: MappingAnchorIndex,
 ) -> OpenAnimeTimestampsStats:
     stats = OpenAnimeTimestampsStats()
     source_id = writer.source_id(OPEN_ANIME_TIMESTAMPS)
@@ -262,7 +274,7 @@ def import_open_anime_timestamps(
                 stats.preview_start_markers += 1
 
             result: EpisodeMappingResult | None = None
-            anchor: tuple[str, str, int] | None = None
+            episode_anchor: tuple[str, str, int] | None = None
             source_episode: int | None = None
             if (
                 episode_number is not None
@@ -275,13 +287,12 @@ def import_open_anime_timestamps(
                     source_episode,
                     scope="R",
                 )
-                anchor = _anchor(result)
+                episode_anchor = _episode_anchor(result)
 
             runtime_episode_id: int | None = None
+            normalized_anchor_id: int | None = None
             normalization_status = "source-only"
             normalization_reason = "AniDB regular-episode bridge unresolved"
-            normalized_provider = ""
-            normalized_id = ""
             normalized_episode_key = ""
 
             if not ranges:
@@ -292,40 +303,53 @@ def import_open_anime_timestamps(
                     else "no ranged timestamp fields"
                 )
                 stats.empty_records += 1
-            elif anchor is not None and source_episode is not None:
-                anchor_provider, anchor_id, target_episode = anchor
-                normalized_provider = anchor_provider
-                normalized_id = anchor_id
+            elif (
+                episode_anchor is not None
+                and source_episode is not None
+                and result is not None
+            ):
+                _provider, _external_id, target_episode = episode_anchor
                 normalized_episode_key = f"ep:{target_episode}"
                 try:
-                    title_id = writer.get_or_create_title({anchor_provider: anchor_id})
-                    runtime_episode_id = writer.get_or_create_episode(
-                        title_id,
-                        episode_key=normalized_episode_key,
-                        episode_number=target_episode,
-                    )
-                    writer.add_episode_ref(
-                        source_id,
-                        source_title_key=source_title_key,
-                        source_episode_key=source_episode_key,
-                        episode_id=runtime_episode_id,
-                        source_episode_number_text=episode_text,
-                    )
-                    _attach_target_ids(
-                        writer,
-                        title_id=title_id,
-                        episode_id=runtime_episode_id,
-                        anchor_provider=anchor_provider,
-                        anchor_id=anchor_id,
+                    normalized_anchor_id = _resolve_title_anchor(
+                        identities,
                         source_anidb_id=source_title_key,
-                        source_episode=source_episode,
                         result=result,
                     )
-                    normalization_status = "mapped"
-                    normalization_reason = "exact-anidb-r-anibridge"
-                    stats.mapped_records += 1
-                except IdentityConflict as exc:
+                    if normalized_anchor_id is None:
+                        normalization_status = "source-only"
+                        normalization_reason = "AniBridge targets have no AMDB anchor"
+                        stats.unmapped_records += 1
+                    else:
+                        writer.get_or_create_title(normalized_anchor_id)
+                        runtime_episode_id = writer.get_or_create_episode(
+                            normalized_anchor_id,
+                            episode_key=normalized_episode_key,
+                            episode_number=target_episode,
+                        )
+                        writer.add_episode_ref(
+                            source_id,
+                            source_title_key=source_title_key,
+                            source_episode_key=source_episode_key,
+                            episode_id=runtime_episode_id,
+                            source_episode_number_text=episode_text,
+                        )
+                        _attach_provider_numbering(
+                            writer,
+                            identities,
+                            anchor_id=normalized_anchor_id,
+                            episode_id=runtime_episode_id,
+                            source_anidb_id=source_title_key,
+                            source_episode=source_episode,
+                            result=result,
+                        )
+                        normalization_status = "mapped"
+                        normalization_reason = "exact-anidb-r-anibridge-amdb"
+                        stats.mapped_records += 1
+                except (IdentityConflict, AnchorResolutionConflict) as exc:
                     runtime_episode_id = None
+                    normalized_anchor_id = None
+                    normalized_episode_key = ""
                     normalization_status = "source-only"
                     normalization_reason = f"identity conflict: {exc}"
                     stats.identity_conflicts += 1
@@ -335,9 +359,10 @@ def import_open_anime_timestamps(
             record_key = (
                 f"oat:{source_title_key}:{episode_text or row_index}:{digest[:16]}"
             )
+            unique_sources = sorted({str(item) for item in upstream_sources})
             metadata = {
-                "upstream_sources": sorted({str(item) for item in upstream_sources}),
-                "field_level_lineage_available": len(set(upstream_sources)) == 1,
+                "upstream_sources": unique_sources,
+                "field_level_lineage_available": len(unique_sources) == 1,
                 "consensus_eligible": consensus_eligible,
                 "preview_start_seconds": preview_start
                 if preview_start is not None and preview_start >= 0
@@ -345,15 +370,9 @@ def import_open_anime_timestamps(
                 "anibridge_source": result.source_descriptor
                 if result is not None
                 else "",
-                "anibridge_targets": [
-                    {
-                        "provider": target.descriptor.provider,
-                        "id": target.descriptor.external_id,
-                        "scope": target.descriptor.scope or "",
-                        "episode": target.episode_number,
-                    }
-                    for target in (result.targets if result is not None else ())
-                ],
+                "anibridge_target_count": len(result.targets)
+                if result is not None
+                else 0,
             }
             record_id = writer.add_evidence_record(
                 snapshot_id=snapshot_id,
@@ -364,8 +383,7 @@ def import_open_anime_timestamps(
                 payload_sha256=digest,
                 normalization_status=normalization_status,
                 normalization_reason=normalization_reason,
-                normalized_provider=normalized_provider,
-                normalized_id=normalized_id,
+                normalized_anchor_id=normalized_anchor_id,
                 normalized_episode_key=normalized_episode_key,
                 metadata=metadata,
             )
@@ -389,7 +407,7 @@ def import_open_anime_timestamps(
                         segment_type=segment_type,
                         start_ms=start_ms,
                         end_ms=end_ms,
-                        mapping_method="exact-anidb-r-anibridge",
+                        mapping_method="exact-anidb-r-anibridge-amdb",
                         mapping_confidence=1.0,
                         consensus_eligible=consensus_eligible,
                     )

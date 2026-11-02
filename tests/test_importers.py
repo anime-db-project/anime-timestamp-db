@@ -8,11 +8,13 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from _mapping_fixture import create_mapping_db
 from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.config import ANISKIP, BAHA, SKIPDB
 from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.importers import import_baha, import_skipdb
+from anime_timestamp_db.mapping_identity import MappingAnchorIndex
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
 
@@ -24,57 +26,6 @@ class _Download:
     retrieved_at = "2026-11-02T00:00:00+00:00"
     etag = ""
     last_modified = ""
-
-
-def _create_mapping_db(path: Path) -> None:
-    with closing(sqlite3.connect(path)) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE nodes (
-                id INTEGER PRIMARY KEY,
-                provider TEXT NOT NULL,
-                external_id TEXT NOT NULL,
-                UNIQUE(provider, external_id)
-            );
-            CREATE TABLE edges (
-                a_node INTEGER NOT NULL,
-                b_node INTEGER NOT NULL,
-                confidence INTEGER NOT NULL,
-                status TEXT NOT NULL,
-                evidence_count INTEGER NOT NULL,
-                evidence_group_count INTEGER NOT NULL,
-                max_weight INTEGER NOT NULL,
-                PRIMARY KEY(a_node, b_node)
-            ) WITHOUT ROWID;
-            CREATE TABLE conflicts (
-                source_node INTEGER NOT NULL,
-                target_provider TEXT NOT NULL,
-                candidate_ids_json TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                PRIMARY KEY(source_node, target_provider)
-            ) WITHOUT ROWID;
-            """
-        )
-        nodes = [
-            (1, "imdb", "tt100"),
-            (2, "tvdb", "999"),
-            (3, "tmdb_tv", "888"),
-            (4, "mal", "10"),
-        ]
-        conn.executemany(
-            "INSERT INTO nodes(id, provider, external_id) VALUES (?, ?, ?)", nodes
-        )
-        for a, b in ((1, 2), (1, 3), (1, 4)):
-            conn.execute(
-                """
-                INSERT INTO edges(
-                    a_node, b_node, confidence, status,
-                    evidence_count, evidence_group_count, max_weight
-                ) VALUES (?, ?, 100, 'accepted', 1, 1, 100)
-                """,
-                (min(a, b), max(a, b)),
-            )
-        conn.commit()
 
 
 class ImporterTests(unittest.TestCase):
@@ -116,29 +67,41 @@ class ImporterTests(unittest.TestCase):
                     }
                 )
 
+            mapping_db = root / "mappings.db"
+            create_mapping_db(
+                mapping_db,
+                nodes=[(1, "mal", "570")],
+                anchors={7001: [1]},
+            )
             runtime = root / "timestamps.db"
             evidence = root / "evidence.db"
-            with DatabaseWriter(runtime, evidence) as writer:
+            with (
+                MappingAnchorIndex(mapping_db) as identities,
+                DatabaseWriter(runtime, evidence) as writer,
+            ):
                 snapshot = writer.add_snapshot(ANISKIP, _Download())
-                stats = import_aniskip(dump, writer=writer, snapshot_id=snapshot)
+                stats = import_aniskip(
+                    dump,
+                    writer=writer,
+                    snapshot_id=snapshot,
+                    identities=identities,
+                )
 
             self.assertEqual(stats.records, 1)
             self.assertEqual(stats.runtime_segments, 1)
             with closing(sqlite3.connect(runtime)) as conn:
                 self.assertEqual(
-                    conn.execute(
-                        "SELECT provider, external_id FROM title_ids"
-                    ).fetchone(),
-                    ("mal", "570"),
+                    conn.execute("SELECT anchor_id FROM titles").fetchone(),
+                    (7001,),
                 )
                 self.assertEqual(
                     conn.execute(
                         """
-                        SELECT provider, title_external_id, episode_number_text
+                        SELECT provider, anchor_id, episode_number_text
                         FROM episode_ids
                         """
                     ).fetchone(),
-                    ("mal", "570", "1"),
+                    ("mal", 7001, "1"),
                 )
                 self.assertEqual(
                     conn.execute(
@@ -147,13 +110,11 @@ class ImporterTests(unittest.TestCase):
                     ("opening", 40000, 130000, 1420000),
                 )
             with closing(sqlite3.connect(evidence)) as conn:
-                evidence_text = " ".join(
-                    str(value)
-                    for row in conn.execute(
-                        "SELECT payload_sha256, metadata_json FROM records"
-                    )
-                    for value in row
-                )
+                row = conn.execute(
+                    "SELECT normalized_anchor_id, payload_sha256, metadata_json FROM records"
+                ).fetchone()
+                self.assertEqual(row[0], 7001)
+                evidence_text = " ".join(str(value) for value in row[1:])
                 self.assertNotIn("private-user-id", evidence_text)
 
     def test_skipdb_import_keeps_evidence_but_runtime_only_approved_mapped(
@@ -218,18 +179,33 @@ class ImporterTests(unittest.TestCase):
                 }
             )
             mapping_db = root / "mappings.db"
-            _create_mapping_db(mapping_db)
+            create_mapping_db(
+                mapping_db,
+                nodes=[
+                    (1, "imdb", "tt100"),
+                    (2, "tvdb", "999"),
+                    (3, "tmdb_tv", "888"),
+                    (4, "mal", "10"),
+                    (5, "anilist", "20"),
+                ],
+                edges=[(1, 2), (1, 3), (1, 4)],
+                anchors={7010: [1, 2, 3, 4, 5]},
+            )
             runtime = root / "timestamps.db"
             evidence = root / "evidence.db"
-            with SkipDBMappingIndex(mapping_db, bridge) as mappings:
-                with DatabaseWriter(runtime, evidence) as writer:
-                    snapshot = writer.add_snapshot(SKIPDB, _Download())
-                    stats = import_skipdb(
-                        dump,
-                        writer=writer,
-                        snapshot_id=snapshot,
-                        mappings=mappings,
-                    )
+            with (
+                SkipDBMappingIndex(mapping_db, bridge) as mappings,
+                MappingAnchorIndex(mapping_db) as identities,
+                DatabaseWriter(runtime, evidence) as writer,
+            ):
+                snapshot = writer.add_snapshot(SKIPDB, _Download())
+                stats = import_skipdb(
+                    dump,
+                    writer=writer,
+                    snapshot_id=snapshot,
+                    mappings=mappings,
+                    identities=identities,
+                )
             self.assertEqual(stats.records, 2)
             self.assertEqual(stats.runtime_segments, 1)
             with closing(sqlite3.connect(runtime)) as conn:
@@ -240,8 +216,14 @@ class ImporterTests(unittest.TestCase):
                     conn.execute("SELECT episode_key FROM episodes").fetchone()[0],
                     "ep:2",
                 )
-                ids = dict(conn.execute("SELECT provider, external_id FROM title_ids"))
-                self.assertEqual(ids, {"mal": "10"})
+                self.assertEqual(
+                    conn.execute("SELECT anchor_id FROM titles").fetchone()[0],
+                    7010,
+                )
+                providers = {
+                    row[0] for row in conn.execute("SELECT provider FROM episode_ids")
+                }
+                self.assertEqual(providers, {"mal", "anilist"})
                 self.assertEqual(
                     conn.execute(
                         "SELECT mapping_method, mapping_confidence FROM segments"
@@ -252,6 +234,13 @@ class ImporterTests(unittest.TestCase):
                 self.assertEqual(
                     conn.execute("SELECT COUNT(*) FROM records").fetchone()[0], 2
                 )
+                anchors = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT normalized_anchor_id FROM records WHERE normalized_anchor_id IS NOT NULL"
+                    )
+                }
+                self.assertEqual(anchors, {7010})
                 metadata = " ".join(
                     row[0] for row in conn.execute("SELECT metadata_json FROM records")
                 )
