@@ -28,6 +28,8 @@ class DatabaseSchemaTests(unittest.TestCase):
             self.assertEqual(
                 runtime_info["metadata"]["schema_version"], str(SCHEMA_VERSION)
             )
+            self.assertEqual(runtime_info["metadata"]["identity_namespace"], "amdb")
+            self.assertNotIn("title_ids", runtime_info["counts"])
             self.assertEqual(runtime_info["counts"]["source_segments"], 0)
             with closing(sqlite3.connect(runtime)) as conn:
                 self.assertEqual(
@@ -46,12 +48,14 @@ class DatabaseSchemaTests(unittest.TestCase):
                 lineage = conn.execute(
                     "INSERT INTO lineages(lineage_key, display_name) VALUES('x','X')"
                 ).lastrowid
-                title = conn.execute(
-                    "INSERT INTO titles(canonical_provider, canonical_id) VALUES('mal','1')"
-                ).lastrowid
+                anchor = 1001
+                conn.execute(
+                    "INSERT INTO titles(anchor_id) VALUES(?)",
+                    (anchor,),
+                )
                 episode = conn.execute(
-                    "INSERT INTO episodes(title_id, episode_key) VALUES(?, 'ep:1')",
-                    (title,),
+                    "INSERT INTO episodes(anchor_id, episode_key) VALUES(?, 'ep:1')",
+                    (anchor,),
                 ).lastrowid
                 with self.assertRaises(sqlite3.IntegrityError):
                     conn.execute(
