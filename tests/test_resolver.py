@@ -28,7 +28,11 @@ class ResolverTests(unittest.TestCase):
             ).lastrowid
             conn.executemany(
                 "INSERT INTO title_ids(provider, external_id, title_id) VALUES(?, ?, ?)",
-                (("mal", "1", title_id), ("anilist", "1", title_id), ("anidb", "23", title_id)),
+                (
+                    ("mal", "1", title_id),
+                    ("anilist", "1", title_id),
+                    ("anidb", "23", title_id),
+                ),
             )
             episode_id = conn.execute(
                 """

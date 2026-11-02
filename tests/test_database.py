@@ -21,9 +21,7 @@ class DatabaseSchemaTests(unittest.TestCase):
             info = inspect_database(path)
 
             self.assertEqual(info["metadata"]["database_role"], "runtime")
-            self.assertEqual(
-                info["metadata"]["schema_version"], str(SCHEMA_VERSION)
-            )
+            self.assertEqual(info["metadata"]["schema_version"], str(SCHEMA_VERSION))
             self.assertEqual(info["counts"]["segments"], 0)
             self.assertEqual(info["counts"]["consensus_segments"], 0)
 

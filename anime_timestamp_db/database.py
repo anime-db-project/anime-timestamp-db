@@ -92,9 +92,7 @@ def inspect_database(path: Path) -> dict[str, Any]:
 
         tables = {
             str(row[0])
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         counts: dict[str, int] = {}
         if role == "runtime":
