@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+from contextlib import closing
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -126,7 +127,7 @@ class DistributionTests(unittest.TestCase):
                 "compact-v1",
             )
 
-            with sqlite3.connect(evidence) as conn:
+            with closing(sqlite3.connect(evidence)) as conn:
                 relation = conn.execute(
                     "SELECT type FROM sqlite_master WHERE name='records'"
                 ).fetchone()
@@ -156,7 +157,7 @@ class DistributionTests(unittest.TestCase):
                     ),
                 )
 
-            with sqlite3.connect(runtime) as conn:
+            with closing(sqlite3.connect(runtime)) as conn:
                 indexes = {
                     str(row[0])
                     for row in conn.execute(
