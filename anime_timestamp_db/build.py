@@ -25,23 +25,23 @@ from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
 from anime_timestamp_db.episode_index import rebuild_episode_ids
 from anime_timestamp_db.importers import import_baha, import_skipdb
-from anime_timestamp_db.open_anime_timestamps_importer import (
-    import_open_anime_timestamps,
-)
-from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
-from anime_timestamp_db.mapping_enrichment import (
+from anime_timestamp_db.mapping_identity import (
+    MappingAnchorIndex,
     decompress_mapping_database,
-    enrich_titles_from_mapping_db,
     mapping_database_metadata,
 )
 from anime_timestamp_db.normalization import merge_movie_episode_aliases
+from anime_timestamp_db.open_anime_timestamps_importer import (
+    import_open_anime_timestamps,
+)
 from anime_timestamp_db.schema import (
     DEFAULT_EVIDENCE_DB_NAME,
     DEFAULT_RUNTIME_DB_NAME,
     SCHEMA_VERSION,
 )
+from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 6
+BUILD_FORMAT_VERSION = 7
 
 
 def _sha256(path: Path) -> str:
@@ -122,7 +122,9 @@ def build_database(
 
     runtime_path = output_dir / DEFAULT_RUNTIME_DB_NAME
     evidence_path = output_dir / DEFAULT_EVIDENCE_DB_NAME
-    with DatabaseWriter(runtime_path, evidence_path, overwrite=True) as writer:
+    with MappingAnchorIndex(mapping_path) as identities, DatabaseWriter(
+        runtime_path, evidence_path, overwrite=True
+    ) as writer:
         writer.set_metadata("generated_at", generated_at)
         writer.set_metadata("build_format_version", BUILD_FORMAT_VERSION)
         writer.set_metadata("consensus_algorithm", "weighted-median-v1")
@@ -131,6 +133,18 @@ def build_database(
         writer.set_metadata(
             "anime_mapping_db_schema_version",
             mapping_metadata.get("schema_version", ""),
+        )
+        writer.set_metadata(
+            "anime_mapping_db_anchor_schema_version",
+            mapping_metadata.get("anchor_schema_version", ""),
+        )
+        writer.set_metadata(
+            "anime_mapping_db_anchor_namespace",
+            mapping_metadata.get("anchor_namespace", ""),
+        )
+        writer.set_metadata(
+            "anime_mapping_db_anchor_entities",
+            mapping_metadata.get("anchor_entities", "0"),
         )
 
         anibridge = AniBridgeIndex.from_file(downloads[ANIBRIDGE.key].path)
@@ -151,14 +165,18 @@ def build_database(
             mapping_download,
             upstream_version=mapping_metadata.get("built_at", ""),
             metadata={
-                "role": "direct-accepted-title-id-enrichment",
-                "mapping_database_metadata": mapping_metadata,
-                "episode_numbering_inferred": False,
+                "role": "stable-title-identity-resolver",
+                "anchor_namespace": mapping_metadata.get("anchor_namespace", ""),
+                "anchor_schema_version": mapping_metadata.get(
+                    "anchor_schema_version", ""
+                ),
+                "anchor_entities": _metadata_int(mapping_metadata, "anchor_entities"),
+                "provider_aliases_copied": False,
             },
         )
         writer.set_snapshot_record_count(
             mapping_snapshot,
-            _metadata_int(mapping_metadata, "accepted_edges"),
+            _metadata_int(mapping_metadata, "anchor_entities"),
         )
 
         aniskip_snapshot = writer.add_snapshot(
@@ -166,6 +184,7 @@ def build_database(
             downloads[ANISKIP.key],
             metadata={
                 "role": "primary-mal-native-timestamp-source",
+                "title_identity": "MAL -> AMDB anchor",
                 "public_sanitized_dataset": True,
                 "explicit_redistribution_license_found": False,
                 "user_id_imported": False,
@@ -175,6 +194,7 @@ def build_database(
             downloads[ANISKIP.key].path,
             writer=writer,
             snapshot_id=aniskip_snapshot,
+            identities=identities,
         )
 
         skip_snapshot = writer.add_snapshot(
@@ -183,7 +203,7 @@ def build_database(
             metadata={
                 "role": "timestamp-source",
                 "episode_normalization": (
-                    "IMDb -> anime-mapping-db TVDB/TMDB -> AniBridge"
+                    "IMDb -> anime-mapping-db TVDB/TMDB -> AniBridge -> AMDB anchor"
                 ),
                 "season_offset_inference": True,
             },
@@ -194,6 +214,7 @@ def build_database(
                 writer=writer,
                 snapshot_id=skip_snapshot,
                 mappings=skipdb_mappings,
+                identities=identities,
             )
 
         oat_snapshot = writer.add_snapshot(
@@ -201,7 +222,9 @@ def build_database(
             downloads[OPEN_ANIME_TIMESTAMPS.key],
             metadata={
                 "role": "anidb-native-timestamp-source-and-aggregator",
-                "episode_normalization": "AniDB:R -> AniBridge -> MAL/AniList/AniDB",
+                "episode_normalization": (
+                    "AniDB:R -> AniBridge -> AMDB anchor/provider numbering"
+                ),
                 "field_level_lineage_available": False,
                 "multi_source_records_consensus_eligible": False,
                 "explicit_redistribution_license_found": False,
@@ -212,6 +235,7 @@ def build_database(
             writer=writer,
             snapshot_id=oat_snapshot,
             anibridge=anibridge,
+            identities=identities,
         )
 
         baha_snapshot = writer.add_snapshot(
@@ -226,18 +250,19 @@ def build_database(
         )
 
         normalization_stats = merge_movie_episode_aliases(writer.conn)
-        enrichment_stats = enrich_titles_from_mapping_db(
-            mapping_path,
-            writer=writer,
-            snapshot_id=mapping_snapshot,
-        )
         with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
-            episode_index_stats = rebuild_episode_ids(writer.conn, skipdb_mappings)
+            episode_index_stats = rebuild_episode_ids(
+                writer.conn,
+                skipdb_mappings,
+                identities,
+            )
 
         consensus_stats = rebuild_consensus(
             writer.conn,
             tolerance_ms=consensus_tolerance_ms,
         )
+        identity_stats = identities.stats.as_dict()
+        writer.set_metadata("identity_lookup_stats", json.dumps(identity_stats, sort_keys=True))
         writer.finalize()
 
     audit = audit_databases(runtime_path, evidence_path)
@@ -273,6 +298,19 @@ def build_database(
         "schema_version": SCHEMA_VERSION,
         "build_format_version": BUILD_FORMAT_VERSION,
         "generated_at": generated_at,
+        "identity": {
+            "namespace": "amdb",
+            "mapping_database_sha256": mapping_download.sha256,
+            "mapping_database_schema_version": mapping_metadata.get(
+                "schema_version", ""
+            ),
+            "anchor_schema_version": mapping_metadata.get(
+                "anchor_schema_version", ""
+            ),
+            "anchor_entities": _metadata_int(mapping_metadata, "anchor_entities"),
+            "provider_aliases_copied": False,
+            "lookup_stats": identity_stats,
+        },
         "sources": {
             spec.key: {
                 **_download_manifest(downloads[spec.key]),
@@ -292,7 +330,6 @@ def build_database(
             "anibridge_mapping_entries": bridge_entry_count,
         },
         "normalization": normalization_stats.as_dict(),
-        "title_enrichment": enrichment_stats.as_dict(),
         "episode_index": episode_index_stats.as_dict(),
         "consensus": consensus_stats,
         "audit": audit,
