@@ -56,6 +56,17 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             WHERE NOT EXISTS (SELECT 1 FROM segments s WHERE s.episode_id=e.id)
             """,
         )
+        duplicate_movie_episode_aliases = _scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM episodes AS movie
+            JOIN episodes AS regular
+              ON regular.title_id=movie.title_id
+             AND regular.episode_key='ep:1'
+            WHERE movie.episode_key='movie'
+            """,
+        )
         provider_episode_identity_errors = _scalar(
             conn,
             """
@@ -94,6 +105,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             "invalid_source_segments": invalid_source_segments,
             "consensus_member_mismatches": bad_consensus_members,
             "orphan_episodes": orphan_episodes,
+            "duplicate_movie_episode_aliases": duplicate_movie_episode_aliases,
             "provider_episode_identity_errors": provider_episode_identity_errors,
             "counts": counts,
             "segments_by_source": count_by(
@@ -129,6 +141,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             and invalid_source_segments == 0
             and bad_consensus_members == 0
             and orphan_episodes == 0
+            and duplicate_movie_episode_aliases == 0
             and provider_episode_identity_errors == 0
             and counts["segments"] > 0
             and counts["source_segments"] > 0

@@ -60,5 +60,7 @@ jobs:
             artifacts/SKIPDB_DATA_LICENSE.txt
             artifacts/BAHA_LICENSE.txt
             artifacts/ANIBRIDGE_LICENSE.txt
+            artifacts/MAPPING_DB_DATA_LICENSE.md
+            artifacts/MAPPING_DB_THIRD_PARTY_NOTICES.md
           if-no-files-found: error
           retention-days: 14

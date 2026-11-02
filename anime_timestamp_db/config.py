@@ -45,6 +45,23 @@ ANIBRIDGE = SourceSpec(
     license_note="MIT; mapping payload aggregates upstream mapping sources",
 )
 
+ANIME_MAPPING_DB = SourceSpec(
+    key="anime-mapping-db",
+    display_name="Anime Mapping DB",
+    url=(
+        "https://github.com/anime-db-project/anime-mapping-db/"
+        "releases/latest/download/mappings.db.zst"
+    ),
+    homepage_url="https://github.com/anime-db-project/anime-mapping-db",
+    source_kind="mapping",
+    license_note=(
+        "Compiled direct title mappings with mixed upstream data terms; "
+        "see bundled MAPPING_DB_DATA_LICENSE.md and "
+        "MAPPING_DB_THIRD_PARTY_NOTICES.md"
+    ),
+    explicit_redistribution_license=False,
+)
+
 BAHA = SourceSpec(
     key="baha",
     display_name="Baha Anime Skip",
@@ -67,7 +84,13 @@ OPEN_ANIME_TIMESTAMPS = SourceSpec(
     explicit_redistribution_license=False,
 )
 
-DEFAULT_BUILD_SOURCES = (ANIBRIDGE, ANISKIP, SKIPDB, BAHA)
+DEFAULT_BUILD_SOURCES = (
+    ANIBRIDGE,
+    ANIME_MAPPING_DB,
+    ANISKIP,
+    SKIPDB,
+    BAHA,
+)
 SOURCE_BY_KEY = {
     spec.key: spec for spec in (*DEFAULT_BUILD_SOURCES, OPEN_ANIME_TIMESTAMPS)
 }

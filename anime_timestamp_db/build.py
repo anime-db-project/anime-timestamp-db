@@ -7,21 +7,36 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import zstandard as zstd
+
 from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.audit import audit_databases
-from anime_timestamp_db.config import ANIBRIDGE, ANISKIP, BAHA, SKIPDB
+from anime_timestamp_db.config import (
+    ANIBRIDGE,
+    ANIME_MAPPING_DB,
+    ANISKIP,
+    BAHA,
+    SKIPDB,
+)
 from anime_timestamp_db.consensus import rebuild_consensus
 from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
+from anime_timestamp_db.episode_index import rebuild_episode_ids
 from anime_timestamp_db.importers import import_baha, import_skipdb
+from anime_timestamp_db.mapping_enrichment import (
+    decompress_mapping_database,
+    enrich_titles_from_mapping_db,
+    mapping_database_metadata,
+)
+from anime_timestamp_db.normalization import merge_movie_episode_aliases
 from anime_timestamp_db.schema import (
     DEFAULT_EVIDENCE_DB_NAME,
     DEFAULT_RUNTIME_DB_NAME,
     SCHEMA_VERSION,
 )
 
-BUILD_FORMAT_VERSION = 3
+BUILD_FORMAT_VERSION = 4
 
 
 def _sha256(path: Path) -> str:
@@ -33,8 +48,6 @@ def _sha256(path: Path) -> str:
 
 
 def _compress(source: Path, target: Path, *, level: int = 10) -> None:
-    import zstandard as zstd
-
     compressor = zstd.ZstdCompressor(level=level, threads=-1)
     with Path(source).open("rb") as src, Path(target).open("wb") as dst:
         compressor.copy_stream(src, dst)
@@ -62,6 +75,13 @@ def _download_manifest(download: DownloadedSource) -> dict[str, object]:
     }
 
 
+def _metadata_int(metadata: dict[str, str], key: str) -> int:
+    try:
+        return max(0, int(metadata.get(key, "0")))
+    except (TypeError, ValueError):
+        return 0
+
+
 def build_database(
     output_dir: Path,
     *,
@@ -75,11 +95,18 @@ def build_database(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
-    specs = (ANIBRIDGE, ANISKIP, SKIPDB, BAHA)
+    specs = (ANIBRIDGE, ANIME_MAPPING_DB, ANISKIP, SKIPDB, BAHA)
     downloads = {
         spec.key: download_source(spec, cache_dir, force=force_download)
         for spec in specs
     }
+
+    mapping_download = downloads[ANIME_MAPPING_DB.key]
+    mapping_path = decompress_mapping_database(
+        mapping_download.path,
+        cache_dir / f"anime-mapping-db-{mapping_download.sha256}.db",
+    )
+    mapping_metadata = mapping_database_metadata(mapping_path)
 
     runtime_path = output_dir / DEFAULT_RUNTIME_DB_NAME
     evidence_path = output_dir / DEFAULT_EVIDENCE_DB_NAME
@@ -88,6 +115,11 @@ def build_database(
         writer.set_metadata("build_format_version", BUILD_FORMAT_VERSION)
         writer.set_metadata("consensus_algorithm", "weighted-median-v1")
         writer.set_metadata("consensus_tolerance_ms", consensus_tolerance_ms)
+        writer.set_metadata("anime_mapping_db_sha256", mapping_download.sha256)
+        writer.set_metadata(
+            "anime_mapping_db_schema_version",
+            mapping_metadata.get("schema_version", ""),
+        )
 
         anibridge = AniBridgeIndex.from_file(downloads[ANIBRIDGE.key].path)
         bridge_snapshot = writer.add_snapshot(
@@ -101,6 +133,21 @@ def build_database(
             len(anibridge.payload) - (1 if "$meta" in anibridge.payload else 0),
         )
         writer.set_snapshot_record_count(bridge_snapshot, bridge_entry_count)
+
+        mapping_snapshot = writer.add_snapshot(
+            ANIME_MAPPING_DB,
+            mapping_download,
+            upstream_version=mapping_metadata.get("built_at", ""),
+            metadata={
+                "role": "direct-accepted-title-id-enrichment",
+                "mapping_database_metadata": mapping_metadata,
+                "episode_numbering_inferred": False,
+            },
+        )
+        writer.set_snapshot_record_count(
+            mapping_snapshot,
+            _metadata_int(mapping_metadata, "accepted_edges"),
+        )
 
         aniskip_snapshot = writer.add_snapshot(
             ANISKIP,
@@ -141,6 +188,14 @@ def build_database(
             snapshot_id=baha_snapshot,
         )
 
+        normalization_stats = merge_movie_episode_aliases(writer.conn)
+        enrichment_stats = enrich_titles_from_mapping_db(
+            mapping_path,
+            writer=writer,
+            snapshot_id=mapping_snapshot,
+        )
+        episode_index_stats = rebuild_episode_ids(writer.conn, anibridge)
+
         consensus_stats = rebuild_consensus(
             writer.conn,
             tolerance_ms=consensus_tolerance_ms,
@@ -157,12 +212,22 @@ def build_database(
     evidence_zst = output_dir / f"{DEFAULT_EVIDENCE_DB_NAME}.zst"
     _compress(runtime_path, runtime_zst)
     _compress(evidence_path, evidence_zst)
-    _copy_notice("DATA_LICENSE.md", output_dir)
-    _copy_notice("THIRD_PARTY_NOTICES.md", output_dir)
-    _copy_notice("ANISKIP_PUBLIC_DATA_NOTICE.md", output_dir)
-    _copy_notice("licenses/SKIPDB_DATA_LICENSE.txt", output_dir)
-    _copy_notice("licenses/BAHA_LICENSE.txt", output_dir)
-    _copy_notice("licenses/ANIBRIDGE_LICENSE.txt", output_dir)
+
+    notices = (
+        ("DATA_LICENSE.md", None),
+        ("THIRD_PARTY_NOTICES.md", None),
+        ("ANISKIP_PUBLIC_DATA_NOTICE.md", None),
+        ("licenses/SKIPDB_DATA_LICENSE.txt", None),
+        ("licenses/BAHA_LICENSE.txt", None),
+        ("licenses/ANIBRIDGE_LICENSE.txt", None),
+        ("licenses/anime-mapping-db/DATA_LICENSE.md", "MAPPING_DB_DATA_LICENSE.md"),
+        (
+            "licenses/anime-mapping-db/THIRD_PARTY_NOTICES.md",
+            "MAPPING_DB_THIRD_PARTY_NOTICES.md",
+        ),
+    )
+    for name, output_name in notices:
+        _copy_notice(name, output_dir, output_name=output_name)
 
     manifest: dict[str, Any] = {
         "project": "anime-timestamp-db",
@@ -186,6 +251,9 @@ def build_database(
             "baha": baha_stats.as_dict(),
             "anibridge_mapping_entries": bridge_entry_count,
         },
+        "normalization": normalization_stats.as_dict(),
+        "title_enrichment": enrichment_stats.as_dict(),
+        "episode_index": episode_index_stats.as_dict(),
         "consensus": consensus_stats,
         "audit": audit,
         "artifacts": {},
@@ -210,14 +278,8 @@ def build_database(
         evidence_zst,
         manifest_path,
     ]
-    for name in (
-        "DATA_LICENSE.md",
-        "THIRD_PARTY_NOTICES.md",
-        "ANISKIP_PUBLIC_DATA_NOTICE.md",
-        "SKIPDB_DATA_LICENSE.txt",
-        "BAHA_LICENSE.txt",
-        "ANIBRIDGE_LICENSE.txt",
-    ):
+    for source_name, output_name in notices:
+        name = output_name or Path(source_name).name
         path = output_dir / name
         if path.is_file():
             checksum_paths.append(path)

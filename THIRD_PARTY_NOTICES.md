@@ -26,6 +26,21 @@ MIT License, copyright © 2026 AniBridge.
 
 Used only as a build-time episode identity bridge for SkipDB. Ratio/split mappings are rejected rather than projected onto differently cut episodes.
 
+## Anime Mapping DB
+
+Source: https://github.com/anime-db-project/anime-mapping-db
+
+Used as a build-time **title identity enrichment** source. The builder downloads the published `mappings.db.zst` artifact and accepts only one-hop edges with `status='accepted'` where the MAL source node has no directional conflict for the target provider.
+
+No transitive graph walk is performed. A title alias does not create provider episode numbering. An alias already attached to a different local title is suppressed instead of merging the titles.
+
+Anime Mapping DB is a compiled database with mixed upstream licensing/provenance. Its current data licensing notice and third-party source table are included in every timestamp artifact as:
+
+- `MAPPING_DB_DATA_LICENSE.md`;
+- `MAPPING_DB_THIRD_PARTY_NOTICES.md`.
+
+Those notices include sources under ODbL/DbCL, CC0, permissive repository licenses, and public datasets without a clearly declared standalone data license. Preserve and review the applicable terms before redistributing a compiled timestamp database.
+
 ## Baha Anime Skip
 
 Source: https://github.com/JacobLinCool/baha-anime-skip

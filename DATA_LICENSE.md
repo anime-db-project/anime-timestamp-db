@@ -20,6 +20,21 @@ ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/
 
 Upstream terms: https://github.com/SkipDB-TV/skipdb/blob/main/DATA-LICENSE
 
+## Anime Mapping DB-derived title aliases
+
+The builder consumes the latest published `anime-db-project/anime-mapping-db` runtime database and copies only direct, accepted, conflict-free title aliases for MAL titles already present in the timestamp database.
+
+Anime Mapping DB is itself a compiled database assembled from multiple independent upstream datasets. Its Apache-2.0 software license does **not** automatically relicense the mapping data. The generated mapping database can contain data subject to ODbL 1.0 + DbCL 1.0, CC0, permissive repository licenses, attribution requirements, and sources for which no standalone dataset license is declared.
+
+Every timestamp artifact therefore includes:
+
+- `MAPPING_DB_DATA_LICENSE.md`;
+- `MAPPING_DB_THIRD_PARTY_NOTICES.md`.
+
+Those files are copied from the Anime Mapping DB repository and describe its data-licensing boundary and current source-by-source notices. Redistribution of a timestamp database containing those derived aliases must preserve and comply with the applicable upstream terms.
+
+The timestamp builder does not use the mapping database to infer provider episode numbering. It copies title identity only.
+
 ## Baha Anime Skip
 
 The builder consumes the checked-in Baha Anime Skip database from `JacobLinCool/baha-anime-skip`. The upstream repository is MIT-licensed. `BAHA_LICENSE.txt` is included with database artifacts.
@@ -35,3 +50,5 @@ Public downloadability by itself is not treated as redistribution permission. `o
 ## Build provenance
 
 Every build records source URLs, final redirected URLs, retrieval timestamps, hashes, byte sizes, ETag/Last-Modified values when available, source roles, and license notes in `manifest.json` and/or `timestamps-evidence.db`.
+
+The manifest also records the exact Anime Mapping DB release redirect/hash, mapping schema metadata, how many aliases were added, and how many mapping/local conflicts were suppressed.
