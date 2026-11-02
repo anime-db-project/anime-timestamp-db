@@ -117,9 +117,9 @@ Anime Mapping DB is consumed as a **build-time bulk artifact**, not through its 
 
 AniSkip user identifiers are never copied into compiled artifacts or record hashes. The current sanitized export no longer contains them; compatibility with the older sanitized schema still explicitly drops `user_id`.
 
-## Actions artifacts, not Releases
+## Actions artifacts and tagged Releases
 
-For now database builds are uploaded only as GitHub Actions artifacts. No database Release is created.
+Normal push, scheduled, and manual database builds continue to use short-lived GitHub Actions artifacts. Permanent GitHub Releases are created only by the dedicated release workflow for an explicit `v*` tag or a manual release run.
 
 `.github/workflows/build.yml` runs on pushes to `main`, manual dispatch, and a daily schedule. A successful build uploads for 14 days:
 
@@ -144,7 +144,7 @@ MAPPING_DB_THIRD_PARTY_NOTICES.md
 
 The Actions job summary prints normalized/source-only coverage, title/episode ID counts, source import results, movie-normalization stats, title-enrichment stats, episode-index stats, and consensus stats.
 
-This gives us real build history and downloadable databases without turning every schema/build experiment into a permanent GitHub Release.
+This keeps ordinary schema/build experiments out of permanent Releases while still allowing intentional tagged snapshots. Tagged Releases publish the database assets first and append explicit project-source archives in `.zip`, `.tar.zst`, and `.7z` formats as the final assets.
 
 ## Local build
 

@@ -1,0 +1,157 @@
+name: Tagged database release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to create (for example v0.4.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timestamp-db-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Choose release tag
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$INPUT_TAG"
+          fi
+          if [[ -z "$tag" ]]; then
+            echo "release tag is required" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Skip an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v7
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Unit tests
+        if: steps.existing.outputs.exists != 'true'
+        run: python -m unittest discover -s tests -v
+
+      - name: Build real-data databases
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          anime-timestamp-db build \
+            --output-dir artifacts \
+            --cache-dir .build-cache/timestamp-sources
+
+      - name: Audit generated databases
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          anime-timestamp-db audit \
+            --db artifacts/timestamps.db \
+            --evidence-db artifacts/timestamps-evidence.db \
+            > artifacts/audit.json
+          cat artifacts/audit.json
+
+      - name: Verify database asset checksums
+        if: steps.existing.outputs.exists != 'true'
+        run: cd artifacts && sha256sum --check SHA256SUMS
+
+      - name: Package source archives
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full zstd
+          tag="${{ steps.meta.outputs.tag }}"
+          prefix="anime-timestamp-db-${tag}"
+          zip="artifacts/${prefix}-source.zip"
+          zst="artifacts/${prefix}-source.tar.zst"
+          seven="artifacts/${prefix}-source.7z"
+
+          git archive --format=zip --prefix="${prefix}/" -o "$zip" "$GITHUB_SHA"
+          git archive --format=tar --prefix="${prefix}/" "$GITHUB_SHA" \
+            | zstd -T0 -19 -o "$zst"
+
+          stage="$(mktemp -d)"
+          git archive --format=tar --prefix="${prefix}/" "$GITHUB_SHA" \
+            | tar -xf - -C "$stage"
+          7z a -t7z -mx=9 "$seven" "$stage/$prefix" >/dev/null
+          rm -rf "$stage"
+
+          {
+            sha256sum "$zip" | sed 's#  artifacts/#  #'
+            sha256sum "$zst" | sed 's#  artifacts/#  #'
+            sha256sum "$seven" | sed 's#  artifacts/#  #'
+          } >> artifacts/SHA256SUMS
+
+      - name: Verify complete release checksums
+        if: steps.existing.outputs.exists != 'true'
+        run: cd artifacts && sha256sum --check SHA256SUMS
+
+      - name: Publish database assets
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          mapfile -t base_assets < <(
+            find artifacts -maxdepth 1 -type f \
+              ! -name '*-source.zip' \
+              ! -name '*-source.tar.zst' \
+              ! -name '*-source.7z' \
+              -print | sort
+          )
+          gh release create "$tag" "${base_assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published first; explicit source archives are appended as the final assets."
+
+          # Keep explicit source archives at the end of the asset list.
+          gh release upload "$tag" \
+            artifacts/*-source.zip \
+            artifacts/*-source.tar.zst \
+            artifacts/*-source.7z \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Existing release
+        if: steps.existing.outputs.exists == 'true'
+        run: echo "Release ${{ steps.meta.outputs.tag }} already exists; nothing was changed."
