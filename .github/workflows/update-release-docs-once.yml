@@ -1,0 +1,53 @@
+name: Update release documentation once
+
+on:
+  push:
+    branches:
+      - chore/tagged-releases-source-archives
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chore/tagged-releases-source-archives
+          fetch-depth: 0
+      - name: Patch README and release tooling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          readme = Path("README.md")
+          text = readme.read_text()
+          old = '''## Actions artifacts, not Releases\n\nFor now database builds are uploaded only as GitHub Actions artifacts. No database Release is created.\n'''
+          new = '''## Actions artifacts and tagged Releases\n\nNormal push, scheduled, and manual database builds continue to use short-lived GitHub Actions artifacts. Permanent GitHub Releases are created only by the dedicated release workflow for an explicit `v*` tag or a manual release run.\n'''
+          if old not in text:
+              raise SystemExit("README release heading block not found")
+          text = text.replace(old, new, 1)
+          old = '''This gives us real build history and downloadable databases without turning every schema/build experiment into a permanent GitHub Release.\n'''
+          new = '''This keeps ordinary schema/build experiments out of permanent Releases while still allowing intentional tagged snapshots. Tagged Releases publish the database assets first and append explicit project-source archives in `.zip`, `.tar.zst`, and `.7z` formats as the final assets.\n'''
+          if old not in text:
+              raise SystemExit("README release summary block not found")
+          text = text.replace(old, new, 1)
+          readme.write_text(text)
+
+          workflow = Path(".github/workflows/release.yml")
+          text = workflow.read_text()
+          old = "sudo apt-get install -y -qq p7zip-full\n"
+          new = "sudo apt-get install -y -qq p7zip-full zstd\n"
+          if old not in text:
+              raise SystemExit("release package install line not found")
+          workflow.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/update-release-docs-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md .github/workflows/release.yml
+          git commit -m "Document tagged timestamp releases"
+          git push origin HEAD:chore/tagged-releases-source-archives
