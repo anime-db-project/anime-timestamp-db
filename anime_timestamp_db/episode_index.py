@@ -15,6 +15,7 @@ _SERIES_EPISODE_RE = re.compile(r"^e(?P<episode>[0-9]+)$")
 class EpisodeIndexStats:
     references: int = 0
     provider_episode_ids: int = 0
+    provider_episode_ids_inserted: int = 0
     skipped_unmapped: int = 0
     skipped_title_mismatch: int = 0
     conflicts: int = 0
@@ -23,6 +24,7 @@ class EpisodeIndexStats:
         return {
             "references": self.references,
             "provider_episode_ids": self.provider_episode_ids,
+            "provider_episode_ids_inserted": self.provider_episode_ids_inserted,
             "skipped_unmapped": self.skipped_unmapped,
             "skipped_title_mismatch": self.skipped_title_mismatch,
             "conflicts": self.conflicts,
@@ -77,7 +79,7 @@ def rebuild_episode_ids(
     *,
     source_key: str = "skipdb",
 ) -> EpisodeIndexStats:
-    """Add provider episode numbering without duplicating provider title IDs."""
+    """Validate/backfill provider episode numbering without title-ID duplication."""
 
     stats = EpisodeIndexStats()
     rows = conn.execute(
@@ -156,11 +158,14 @@ def rebuild_episode_ids(
                 episode_number=episode_number,
             )
             if outcome == "inserted":
-                stats.provider_episode_ids += 1
+                stats.provider_episode_ids_inserted += 1
             elif outcome == "title-mismatch":
                 stats.skipped_title_mismatch += 1
             elif outcome == "conflict":
                 stats.conflicts += 1
 
+    stats.provider_episode_ids = int(
+        conn.execute("SELECT COUNT(*) FROM episode_ids").fetchone()[0]
+    )
     conn.commit()
     return stats
