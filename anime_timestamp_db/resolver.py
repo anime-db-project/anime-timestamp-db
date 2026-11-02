@@ -24,6 +24,8 @@ class Segment:
     source_segment_id: str
     media_duration_ms: int | None
     quality_score: float | None
+    mapping_method: str
+    mapping_confidence: float
     votes_up: int
     votes_down: int
 
@@ -163,6 +165,7 @@ class TimestampResolver:
             SELECT seg.segment_type, seg.start_ms, seg.end_ms,
                    src.source_key, lin.lineage_key, seg.source_segment_id,
                    seg.media_duration_ms, seg.quality_score,
+                   seg.mapping_method, seg.mapping_confidence,
                    seg.votes_up, seg.votes_down, {distance_select}
             FROM title_ids tid
             JOIN episodes ep ON ep.title_id=tid.title_id
@@ -185,8 +188,10 @@ class TimestampResolver:
                     source_segment_id=str(row[5]),
                     media_duration_ms=int(row[6]) if row[6] is not None else None,
                     quality_score=float(row[7]) if row[7] is not None else None,
-                    votes_up=int(row[8]),
-                    votes_down=int(row[9]),
+                    mapping_method=str(row[8]),
+                    mapping_confidence=float(row[9]),
+                    votes_up=int(row[10]),
+                    votes_down=int(row[11]),
                 )
                 for row in conn.execute(query, tuple(params))
             ]

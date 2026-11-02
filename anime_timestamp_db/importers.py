@@ -5,9 +5,9 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from anime_timestamp_db.anibridge import AniBridgeIndex, EpisodeTarget
 from anime_timestamp_db.config import BAHA, SKIPDB
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
+from anime_timestamp_db.skipdb_mapping import EpisodeResolution, SkipDBMappingIndex
 
 _SKIPDB_TYPES = {
     "intro": "opening",
@@ -38,6 +38,12 @@ class ImportStats:
     invalid: int = 0
     skipped_status: int = 0
     skipped_complex_mappings: int = 0
+    anime_titles_detected: int = 0
+    exact_episode_mappings: int = 0
+    inferred_episode_mappings: int = 0
+    runtime_segments_exact: int = 0
+    runtime_segments_inferred: int = 0
+    anime_source_only_segments: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -77,58 +83,16 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
-def _normalize_episode_targets(
-    targets: tuple[EpisodeTarget, ...],
-) -> tuple[dict[str, str], int, str, bool] | None:
-    """Reduce explicit AniBridge targets to one coherent anime episode identity."""
-
-    if not targets:
-        return None
-
-    by_provider: dict[str, set[tuple[str, str | None, int]]] = {}
-    for target in targets:
-        by_provider.setdefault(target.descriptor.provider, set()).add(
-            (
-                target.descriptor.external_id,
-                target.descriptor.scope,
-                target.episode_number,
-            )
-        )
-    if any(len(values) != 1 for values in by_provider.values()):
-        return None
-
-    flattened = {
-        provider: next(iter(values)) for provider, values in by_provider.items()
+def _resolution_metadata(resolution: EpisodeResolution | None) -> dict[str, object]:
+    if resolution is None:
+        return {}
+    return {
+        "mapping_method": resolution.method,
+        "mapping_confidence": resolution.confidence,
+        "mapping_routes": list(resolution.routes),
+        "target_ids": dict(sorted(resolution.ids.items())),
+        "target_episode": resolution.episode_number,
     }
-    regular_numbers = {
-        episode_number
-        for provider, (_, _scope, episode_number) in flattened.items()
-        if provider in {"mal", "anilist"}
-    }
-    if len(regular_numbers) > 1:
-        return None
-
-    title_ids = {
-        provider: external_id
-        for provider, (external_id, _scope, _episode_number) in flattened.items()
-    }
-    if regular_numbers:
-        episode_number = next(iter(regular_numbers))
-        return title_ids, episode_number, f"ep:{episode_number}", False
-
-    anidb = flattened.get("anidb")
-    if anidb is None:
-        return None
-    _external_id, scope, episode_number = anidb
-    normalized_scope = (scope or "R").upper()
-    if normalized_scope == "R":
-        return title_ids, episode_number, f"ep:{episode_number}", False
-    return (
-        title_ids,
-        episode_number,
-        f"anidb:{normalized_scope}:{episode_number}",
-        True,
-    )
 
 
 def import_skipdb(
@@ -136,7 +100,7 @@ def import_skipdb(
     *,
     writer: DatabaseWriter,
     snapshot_id: int,
-    mappings: AniBridgeIndex,
+    mappings: SkipDBMappingIndex,
 ) -> ImportStats:
     stats = ImportStats(source=SKIPDB.key)
     source_id = writer.source_id(SKIPDB)
@@ -151,6 +115,21 @@ def import_skipdb(
     rows = payload.get("segments", []) if isinstance(payload, dict) else []
     if not isinstance(rows, list):
         raise ValueError("SkipDB dump must contain a 'segments' array")
+
+    valid_rows = [raw for raw in rows if isinstance(raw, dict)]
+    episode_map, plan_stats = mappings.prepare_series_episode_map(valid_rows)
+    direct_anime_imdb_ids = {
+        str(raw.get("imdb_id") or "").strip()
+        for raw in valid_rows
+        if str(raw.get("imdb_id") or "").strip()
+        and mappings.title_candidates(str(raw.get("imdb_id") or "").strip()).is_anime
+    }
+    bridge_anime_imdb_ids = {imdb_id for imdb_id, _season, _episode in episode_map}
+    anime_imdb_ids = direct_anime_imdb_ids | bridge_anime_imdb_ids
+    stats.anime_titles_detected = len(anime_imdb_ids)
+    stats.exact_episode_mappings = plan_stats.exact_episodes
+    stats.inferred_episode_mappings = plan_stats.inferred_episodes
+    movie_cache: dict[str, EpisodeResolution | None] = {}
 
     for index, raw in enumerate(rows):
         stats.records += 1
@@ -197,93 +176,116 @@ def import_skipdb(
             and end_ms is not None
             and end_ms > start_ms
         )
+        title_candidates = mappings.title_candidates(imdb_id) if imdb_id else None
+        resolution: EpisodeResolution | None = None
+        if (
+            valid_range
+            and media_type == "series"
+            and season is not None
+            and episode is not None
+        ):
+            resolution = episode_map.get((imdb_id, season, episode))
+        elif valid_range and media_type == "movie":
+            if imdb_id not in movie_cache:
+                movie_cache[imdb_id] = mappings.resolve_movie(imdb_id)
+            resolution = movie_cache[imdb_id]
+            if resolution is not None:
+                anime_imdb_ids.add(imdb_id)
+
         normalization_status = "unprocessed"
         normalization_reason = ""
         normalized_provider = ""
         normalized_id = ""
         normalized_episode_key = ""
-        runtime_target: tuple[int, str] | None = None
+        runtime_episode_id: int | None = None
 
         if not valid_range:
             normalization_status = "invalid"
             normalization_reason = "missing identifier/type or invalid timestamp range"
             stats.invalid += 1
-        else:
-            ids: dict[str, str] = {}
-            episode_number: int | None = None
-            episode_key = ""
-            is_special = False
+        elif resolution is not None:
+            canonical_provider = min(
+                resolution.ids,
+                key=lambda provider: _PROVIDER_PRIORITY.get(provider, 99),
+            )
+            normalization_status = (
+                "mapped-inferred"
+                if resolution.method == "inferred-season-offset"
+                else "mapped"
+            )
+            normalization_reason = resolution.method
+            normalized_provider = canonical_provider
+            normalized_id = resolution.ids[canonical_provider]
+            normalized_episode_key = resolution.episode_key
+            stats.mapped += 1
 
-            if media_type == "series" and season is not None and episode is not None:
-                mapping = mappings.resolve_series_episode(imdb_id, season, episode)
-                stats.skipped_complex_mappings += mapping.skipped_complex_targets
-                normalized = _normalize_episode_targets(mapping.targets)
-                if normalized is not None:
-                    ids, episode_number, episode_key, is_special = normalized
-            elif media_type == "movie":
-                movie_targets = mappings.resolve_movie(imdb_id)
-                per_provider: dict[str, set[str]] = {}
-                for descriptor in movie_targets:
-                    per_provider.setdefault(descriptor.provider, set()).add(
-                        descriptor.external_id
+            if status == "approved":
+                try:
+                    anchor_provider = min(
+                        resolution.ids,
+                        key=lambda provider: _PROVIDER_PRIORITY.get(provider, 99),
                     )
-                if per_provider and all(
-                    len(values) == 1 for values in per_provider.values()
-                ):
-                    ids = {
-                        provider: next(iter(values))
-                        for provider, values in per_provider.items()
-                    }
-                    ids["imdb_movie"] = imdb_id
-                    episode_number = 1
-                    episode_key = "movie"
-
-            if ids and episode_number is not None and episode_key:
-                canonical_provider = min(
-                    ids, key=lambda p: _PROVIDER_PRIORITY.get(p, 99)
-                )
-                normalization_status = "mapped"
-                normalization_reason = "AniBridge one-to-one episode mapping"
-                normalized_provider = canonical_provider
-                normalized_id = ids[canonical_provider]
-                normalized_episode_key = episode_key
-                stats.mapped += 1
-
-                if status == "approved":
-                    try:
-                        title_id = writer.get_or_create_title(
-                            ids, display_title=display_title
-                        )
-                        episode_id = writer.get_or_create_episode(
-                            title_id,
-                            episode_key=episode_key,
-                            episode_number=episode_number,
-                            is_special=is_special,
-                        )
-                        writer.add_episode_ref(
-                            source_id,
-                            source_title_key=source_title_key,
-                            source_episode_key=source_episode_key,
-                            episode_id=episode_id,
-                            source_episode_number_text=(
-                                "" if episode is None else str(episode)
+                    anchor_ids = {anchor_provider: resolution.ids[anchor_provider]}
+                    title_id = writer.get_or_create_title(
+                        anchor_ids,
+                        display_title=display_title,
+                    )
+                    runtime_episode_id = writer.get_or_create_episode(
+                        title_id,
+                        episode_key=resolution.episode_key,
+                        episode_number=resolution.episode_number,
+                        is_special=resolution.is_special,
+                    )
+                    writer.add_episode_ref(
+                        source_id,
+                        source_title_key=source_title_key,
+                        source_episode_key=source_episode_key,
+                        episode_id=runtime_episode_id,
+                        source_episode_number_text=(
+                            "" if episode is None else str(episode)
+                        ),
+                    )
+                    for target in resolution.provider_episodes:
+                        belongs = writer.conn.execute(
+                            """
+                            SELECT title_id FROM title_ids
+                            WHERE provider=? AND external_id=?
+                            """,
+                            (
+                                target.descriptor.provider,
+                                target.descriptor.external_id,
                             ),
-                        )
-                    except IdentityConflict as exc:
-                        normalization_status = "ambiguous"
-                        normalization_reason = str(exc)
-                        normalized_provider = ""
-                        normalized_id = ""
-                        normalized_episode_key = ""
-                        stats.ambiguous += 1
-                    else:
-                        runtime_target = (episode_id, episode_key)
-            else:
-                normalization_status = "unmapped"
-                normalization_reason = (
-                    "no safe one-to-one AniBridge anime episode mapping"
-                )
-                stats.unmapped += 1
+                        ).fetchone()
+                        if belongs is None or int(belongs[0]) != title_id:
+                            continue
+                        try:
+                            writer.add_episode_id(
+                                episode_id=runtime_episode_id,
+                                provider=target.descriptor.provider,
+                                title_external_id=target.descriptor.external_id,
+                                scope=target.descriptor.scope or "",
+                                episode_number=target.episode_number,
+                            )
+                        except IdentityConflict:
+                            continue
+                except IdentityConflict as exc:
+                    normalization_status = "ambiguous"
+                    normalization_reason = str(exc)
+                    normalized_provider = ""
+                    normalized_id = ""
+                    normalized_episode_key = ""
+                    runtime_episode_id = None
+                    stats.ambiguous += 1
+        elif imdb_id in anime_imdb_ids:
+            normalization_status = "source-only"
+            normalization_reason = (
+                "anime title identified but episode mapping is unresolved"
+            )
+            stats.unmapped += 1
+        else:
+            normalization_status = "unmapped"
+            normalization_reason = "no anime identity in mappings.db"
+            stats.unmapped += 1
 
         metadata = {
             "media_type": media_type,
@@ -291,6 +293,11 @@ def import_skipdb(
             "episode": episode,
             "title": display_title,
             "created_at": str(raw.get("created_at") or ""),
+            "anime_title_candidates": (
+                title_candidates.as_dict() if title_candidates is not None else {}
+            ),
+            "anime_detected_by_episode_bridge": imdb_id in bridge_anime_imdb_ids,
+            **_resolution_metadata(resolution),
         }
         record_id = writer.add_evidence_record(
             snapshot_id=snapshot_id,
@@ -329,28 +336,49 @@ def import_skipdb(
             if valid_range:
                 stats.skipped_status += 1
             continue
-        if runtime_target is None or not valid_range:
+        if not valid_range:
             continue
 
-        episode_id, _episode_key = runtime_target
-        writer.add_segment(
-            episode_id=episode_id,
-            source_id=source_id,
-            lineage_id=lineage_id,
-            source_segment_id=source_segment_id,
-            segment_type=segment_type,
-            start_ms=start_ms,
-            end_ms=end_ms,
-            media_duration_ms=media_duration_ms,
-            quality_score=quality_score,
-            votes_up=votes_up,
-            votes_down=votes_down,
-        )
-        stats.runtime_segments += 1
+        if runtime_episode_id is not None and resolution is not None:
+            writer.add_segment(
+                episode_id=runtime_episode_id,
+                source_id=source_id,
+                lineage_id=lineage_id,
+                source_segment_id=source_segment_id,
+                segment_type=segment_type,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                media_duration_ms=media_duration_ms,
+                quality_score=quality_score,
+                mapping_method=resolution.method,
+                mapping_confidence=resolution.confidence,
+                votes_up=votes_up,
+                votes_down=votes_down,
+            )
+            stats.runtime_segments += 1
+            if resolution.method == "inferred-season-offset":
+                stats.runtime_segments_inferred += 1
+            else:
+                stats.runtime_segments_exact += 1
+        elif imdb_id in anime_imdb_ids:
+            writer.add_source_segment(
+                source_id=source_id,
+                lineage_id=lineage_id,
+                source_title_key=source_title_key,
+                source_episode_key=source_episode_key,
+                source_segment_id=source_segment_id,
+                segment_type=segment_type,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                media_duration_ms=media_duration_ms,
+            )
+            stats.source_only_segments += 1
+            stats.anime_source_only_segments += 1
 
         if index and index % 5000 == 0:
             writer.commit()
 
+    stats.anime_titles_detected = len(anime_imdb_ids)
     writer.set_snapshot_record_count(snapshot_id, stats.records)
     writer.commit()
     return stats

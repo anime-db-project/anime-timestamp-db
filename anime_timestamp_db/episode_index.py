@@ -4,7 +4,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 
-from anime_timestamp_db.anibridge import AniBridgeIndex
+from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
 _SERIES_TITLE_RE = re.compile(r"^(?P<imdb>tt[0-9]+):s(?P<season>[0-9]+)$")
 _SERIES_EPISODE_RE = re.compile(r"^e(?P<episode>[0-9]+)$")
@@ -78,7 +78,7 @@ def _insert_episode_id(
 
 def rebuild_episode_ids(
     conn: sqlite3.Connection,
-    mappings: AniBridgeIndex,
+    mappings: SkipDBMappingIndex,
     *,
     source_key: str = "skipdb",
 ) -> EpisodeIndexStats:
@@ -111,27 +111,33 @@ def rebuild_episode_ids(
         series_title = _SERIES_TITLE_RE.fullmatch(title_key)
         series_episode = _SERIES_EPISODE_RE.fullmatch(episode_key)
         if series_title and series_episode:
-            result = mappings.resolve_series_episode(
+            result = mappings.resolve_exact_series_episode(
                 series_title.group("imdb"),
                 int(series_title.group("season")),
                 int(series_episode.group("episode")),
             )
-            targets.extend(
-                (
-                    target.descriptor.provider,
-                    target.descriptor.external_id,
-                    target.descriptor.scope or "",
-                    target.episode_number,
+            if result is not None:
+                targets.extend(
+                    (
+                        target.descriptor.provider,
+                        target.descriptor.external_id,
+                        target.descriptor.scope or "",
+                        target.episode_number,
+                    )
+                    for target in result.provider_episodes
                 )
-                for target in result.targets
-            )
         elif episode_key == "movie" and title_key.startswith("tt"):
-            movie_targets = mappings.resolve_movie(title_key)
-            targets.extend(
-                (target.provider, target.external_id, target.scope or "", 1)
-                for target in movie_targets
-            )
-            targets.append(("imdb_movie", title_key, "", 1))
+            movie = mappings.resolve_movie(title_key)
+            if movie is not None:
+                targets.extend(
+                    (
+                        target.descriptor.provider,
+                        target.descriptor.external_id,
+                        target.descriptor.scope or "",
+                        target.episode_number,
+                    )
+                    for target in movie.provider_episodes
+                )
         else:
             stats.skipped_unmapped += 1
             continue

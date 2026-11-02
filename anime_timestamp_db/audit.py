@@ -26,6 +26,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             SELECT COUNT(*) FROM segments
             WHERE start_ms < 0 OR end_ms <= start_ms
                OR (media_duration_ms IS NOT NULL AND media_duration_ms <= 0)
+               OR mapping_confidence < 0.0 OR mapping_confidence > 1.0
             """,
         )
         invalid_source_segments = _scalar(
@@ -127,6 +128,13 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             "segments_by_type": count_by(
                 conn,
                 "SELECT segment_type, COUNT(*) FROM segments GROUP BY segment_type ORDER BY segment_type",
+            ),
+            "segments_by_mapping_method": count_by(
+                conn,
+                """
+                SELECT mapping_method, COUNT(*) FROM segments
+                GROUP BY mapping_method ORDER BY mapping_method
+                """,
             ),
             "source_segments_by_type": count_by(
                 conn,

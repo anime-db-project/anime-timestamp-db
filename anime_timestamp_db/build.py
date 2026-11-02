@@ -24,6 +24,7 @@ from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
 from anime_timestamp_db.episode_index import rebuild_episode_ids
 from anime_timestamp_db.importers import import_baha, import_skipdb
+from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 from anime_timestamp_db.mapping_enrichment import (
     decompress_mapping_database,
     enrich_titles_from_mapping_db,
@@ -36,7 +37,7 @@ from anime_timestamp_db.schema import (
     SCHEMA_VERSION,
 )
 
-BUILD_FORMAT_VERSION = 4
+BUILD_FORMAT_VERSION = 5
 
 
 def _sha256(path: Path) -> str:
@@ -168,14 +169,21 @@ def build_database(
         skip_snapshot = writer.add_snapshot(
             SKIPDB,
             downloads[SKIPDB.key],
-            metadata={"role": "timestamp-source"},
+            metadata={
+                "role": "timestamp-source",
+                "episode_normalization": (
+                    "IMDb -> anime-mapping-db TVDB/TMDB -> AniBridge"
+                ),
+                "season_offset_inference": True,
+            },
         )
-        skip_stats = import_skipdb(
-            downloads[SKIPDB.key].path,
-            writer=writer,
-            snapshot_id=skip_snapshot,
-            mappings=anibridge,
-        )
+        with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
+            skip_stats = import_skipdb(
+                downloads[SKIPDB.key].path,
+                writer=writer,
+                snapshot_id=skip_snapshot,
+                mappings=skipdb_mappings,
+            )
 
         baha_snapshot = writer.add_snapshot(
             BAHA,
@@ -194,7 +202,8 @@ def build_database(
             writer=writer,
             snapshot_id=mapping_snapshot,
         )
-        episode_index_stats = rebuild_episode_ids(writer.conn, anibridge)
+        with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
+            episode_index_stats = rebuild_episode_ids(writer.conn, skipdb_mappings)
 
         consensus_stats = rebuild_consensus(
             writer.conn,

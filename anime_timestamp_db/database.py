@@ -487,6 +487,61 @@ class DatabaseWriter:
             ),
         )
 
+    def add_episode_id(
+        self,
+        *,
+        episode_id: int,
+        provider: str,
+        title_external_id: str,
+        episode_number: int,
+        scope: str = "",
+    ) -> None:
+        normalized_provider = str(provider).strip().casefold()
+        normalized_id = str(title_external_id).strip()
+        normalized_scope = str(scope or "").strip().upper()
+        number_text = str(int(episode_number))
+        title_match = self.conn.execute(
+            """
+            SELECT 1
+            FROM episodes ep
+            JOIN title_ids tid ON tid.title_id=ep.title_id
+            WHERE ep.id=? AND tid.provider=? AND tid.external_id=?
+            """,
+            (episode_id, normalized_provider, normalized_id),
+        ).fetchone()
+        if title_match is None:
+            raise IdentityConflict(
+                f"episode {episode_id} does not belong to "
+                f"{normalized_provider}:{normalized_id}"
+            )
+        row = self.conn.execute(
+            """
+            SELECT episode_id FROM episode_ids
+            WHERE provider=? AND title_external_id=? AND scope=?
+              AND episode_number_text=?
+            """,
+            (normalized_provider, normalized_id, normalized_scope, number_text),
+        ).fetchone()
+        if row is not None and int(row[0]) != episode_id:
+            raise IdentityConflict(
+                "provider episode identity resolves to multiple normalized episodes: "
+                f"{normalized_provider}:{normalized_id}:{normalized_scope}:{number_text}"
+            )
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO episode_ids(
+                provider, title_external_id, scope, episode_number_text, episode_id
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_provider,
+                normalized_id,
+                normalized_scope,
+                number_text,
+                episode_id,
+            ),
+        )
+
     def add_segment(
         self,
         *,
@@ -499,6 +554,8 @@ class DatabaseWriter:
         end_ms: int,
         media_duration_ms: int | None = None,
         quality_score: float | None = None,
+        mapping_method: str = "native",
+        mapping_confidence: float = 1.0,
         votes_up: int = 0,
         votes_down: int = 0,
     ) -> None:
@@ -507,8 +564,9 @@ class DatabaseWriter:
             INSERT OR IGNORE INTO segments(
                 episode_id, source_id, lineage_id, source_segment_id,
                 segment_type, start_ms, end_ms, media_duration_ms,
-                quality_score, votes_up, votes_down
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                quality_score, mapping_method, mapping_confidence,
+                votes_up, votes_down
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 episode_id,
@@ -520,6 +578,8 @@ class DatabaseWriter:
                 end_ms,
                 media_duration_ms,
                 quality_score,
+                str(mapping_method),
+                max(0.0, min(1.0, float(mapping_confidence))),
                 max(0, int(votes_up)),
                 max(0, int(votes_down)),
             ),

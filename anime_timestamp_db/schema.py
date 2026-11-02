@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DEFAULT_RUNTIME_DB_NAME = "timestamps.db"
 DEFAULT_EVIDENCE_DB_NAME = "timestamps-evidence.db"
 
@@ -96,6 +96,9 @@ CREATE TABLE segments (
     end_ms INTEGER NOT NULL CHECK(end_ms > start_ms),
     media_duration_ms INTEGER CHECK(media_duration_ms IS NULL OR media_duration_ms > 0),
     quality_score REAL,
+    mapping_method TEXT NOT NULL DEFAULT 'native',
+    mapping_confidence REAL NOT NULL DEFAULT 1.0
+        CHECK(mapping_confidence >= 0.0 AND mapping_confidence <= 1.0),
     votes_up INTEGER NOT NULL DEFAULT 0 CHECK(votes_up >= 0),
     votes_down INTEGER NOT NULL DEFAULT 0 CHECK(votes_down >= 0),
     UNIQUE(source_id, source_segment_id)

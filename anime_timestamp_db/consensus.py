@@ -15,6 +15,7 @@ class _Observation:
     end_ms: int
     media_duration_ms: int | None
     quality_score: float | None
+    mapping_confidence: float
     votes_up: int
 
 
@@ -76,7 +77,8 @@ def _compatible(
 
 def _weight(item: _Observation) -> float:
     score = max(0.0, float(item.quality_score or 0.0))
-    return 1.0 + score + 0.25 * math.log1p(max(0, item.votes_up))
+    base = 1.0 + score + 0.25 * math.log1p(max(0, item.votes_up))
+    return base * max(0.05, min(1.0, item.mapping_confidence))
 
 
 def _weighted_median(items: list[tuple[int, float]]) -> int:
@@ -128,7 +130,7 @@ def rebuild_consensus(
         rows = conn.execute(
             """
             SELECT id, source_id, lineage_id, start_ms, end_ms,
-                   media_duration_ms, quality_score, votes_up
+                   media_duration_ms, quality_score, mapping_confidence, votes_up
             FROM segments
             WHERE episode_id=? AND segment_type=?
             ORDER BY start_ms, end_ms, id
@@ -144,7 +146,8 @@ def rebuild_consensus(
                 end_ms=int(row[4]),
                 media_duration_ms=int(row[5]) if row[5] is not None else None,
                 quality_score=float(row[6]) if row[6] is not None else None,
-                votes_up=int(row[7]),
+                mapping_confidence=float(row[7]),
+                votes_up=int(row[8]),
             )
             for row in rows
         ]

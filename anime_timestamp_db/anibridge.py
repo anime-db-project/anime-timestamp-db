@@ -133,13 +133,11 @@ class AniBridgeIndex:
             raise ValueError("AniBridge mapping payload must be a JSON object")
         return cls(payload)
 
-    def resolve_series_episode(
+    def _resolve_episode_source(
         self,
-        imdb_id: str,
-        season: int,
+        source: str,
         episode: int,
     ) -> EpisodeMappingResult:
-        source = f"imdb_show:{imdb_id}:s{season}"
         bucket = self.payload.get(source)
         if not isinstance(bucket, dict):
             return EpisodeMappingResult(source, (), 0)
@@ -200,8 +198,36 @@ class AniBridgeIndex:
         )
         return EpisodeMappingResult(source, ordered, skipped_complex)
 
-    def resolve_movie(self, imdb_id: str) -> tuple[Descriptor, ...]:
-        source = f"imdb_movie:{imdb_id}"
+    def resolve_show_episode(
+        self,
+        source_provider: str,
+        external_id: str,
+        season: int,
+        episode: int,
+    ) -> EpisodeMappingResult:
+        provider = str(source_provider).strip().casefold()
+        if provider not in {"imdb_show", "tvdb_show", "tmdb_show"}:
+            raise ValueError(f"unsupported show source provider: {source_provider}")
+        source = f"{provider}:{external_id}:s{season}"
+        return self._resolve_episode_source(source, episode)
+
+    def resolve_series_episode(
+        self,
+        imdb_id: str,
+        season: int,
+        episode: int,
+    ) -> EpisodeMappingResult:
+        return self.resolve_show_episode("imdb_show", imdb_id, season, episode)
+
+    def resolve_movie_from(
+        self,
+        source_provider: str,
+        external_id: str,
+    ) -> tuple[Descriptor, ...]:
+        provider = str(source_provider).strip().casefold()
+        if provider not in {"imdb_movie", "tvdb_movie", "tmdb_movie"}:
+            raise ValueError(f"unsupported movie source provider: {source_provider}")
+        source = f"{provider}:{external_id}"
         bucket = self.payload.get(source)
         if not isinstance(bucket, dict):
             return ()
@@ -227,3 +253,6 @@ class AniBridgeIndex:
                 ),
             )
         )
+
+    def resolve_movie(self, imdb_id: str) -> tuple[Descriptor, ...]:
+        return self.resolve_movie_from("imdb_movie", imdb_id)

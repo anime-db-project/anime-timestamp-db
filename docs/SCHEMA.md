@@ -1,6 +1,6 @@
-# Schema v2
+# Schema v3
 
-Schema v2 is the first data-bearing design. It separates normalized anime timestamps, source-addressable timestamps, and build evidence instead of forcing every upstream dataset into one identity model.
+Schema v3 extends the data-bearing design with explicit episode-mapping provenance and confidence. It separates normalized anime timestamps, source-addressable timestamps, and build evidence instead of forcing every upstream dataset into one identity model.
 
 `schema_version` changes only when the SQLite table/column contract changes. Builder behavior can evolve independently through `build_format_version`.
 
@@ -23,7 +23,7 @@ One local anime title plus explicit provider IDs.
 Title identity currently comes from three paths:
 
 1. native MAL IDs in AniSkip;
-2. MAL/AniList/AniDB/IMDb movie IDs supplied by safe AniBridge episode mappings;
+2. anime IDs supplied by safe SkipDB episode projection through Anime Mapping DB plus AniBridge, and direct AniBridge movie mappings;
 3. direct accepted, conflict-free aliases from the published Anime Mapping DB.
 
 Anime Mapping DB enrichment is intentionally **title-only**. If it adds a Kitsu, Shikimori, IMDb, TVDB, TMDB, aniSearch, or another provider ID, that does not prove that the provider's episode number `N` equals MAL episode `N`.
@@ -56,11 +56,11 @@ Movie normalization may repoint an existing source reference from local `movie` 
 
 ### `segments`
 
-Approved normalized source observations. Stores source and lineage, stable source-record ID, normalized segment type, start/end milliseconds, optional full media duration, quality score and vote counts.
+Approved normalized source observations. Stores source and lineage, stable source-record ID, normalized segment type, start/end milliseconds, optional full media duration, quality score and vote counts. Schema v3 additionally stores `mapping_method` and `mapping_confidence` (`0..1`) so native/exact/inferred episode identity remains queryable and can influence consensus weight.
 
 ### `source_segments`
 
-Valid ranges that are not safely cross-database-normalized. Baha Anime Skip currently uses this table because its bulk database is keyed by Bahamut `videoSn` and does not provide a reusable anime-ID/episode mapping.
+Valid ranges that are not safely cross-database-normalized. Baha Anime Skip uses this table because its bulk database is keyed by Bahamut `videoSn`. SkipDB also uses it for approved rows whose IMDb title is confidently anime but whose concrete season/episode mapping remains unresolved.
 
 ### `consensus_segments` / `consensus_members`
 
@@ -94,10 +94,11 @@ The normalized timestamp range observed in a timestamp evidence record.
 
 Timestamp records commonly use:
 
-- `mapped`: safe anime episode mapping found;
-- `unmapped`: no safe one-to-one AniBridge mapping;
+- `mapped`: exact anime episode mapping found;
+- `mapped-inferred`: conservative same-season episode-offset inference found;
+- `unmapped`: no supported anime identity/episode projection;
 - `ambiguous`: identity conflict; runtime row suppressed;
-- `source-only`: valid timestamp retained under its upstream episode key;
+- `source-only`: valid anime timestamp retained under its upstream episode key because the exact episode identity remains unresolved;
 - `invalid`: malformed/missing identity or invalid range.
 
 Build-time mapping evidence can also use `mapped` or `ambiguous` depending on whether aliases were attached safely.
@@ -106,11 +107,24 @@ Build-time mapping evidence can also use `mapped` or `ambiguous` depending on wh
 
 Current normalized names include `opening`, `ending`, `recap`, and `preview`. Types remain text rather than a closed SQL enum so a useful future provider type does not require a schema migration merely to be stored.
 
-## AniBridge projection
+## SkipDB / AniBridge projection
 
-Only one-source-episode to one-target-episode projections are accepted. Ratio mappings (`|2`, `|-2`, etc.) represent split/combined episode granularity and are deliberately skipped. Non-contiguous target ranges without ratios can be projected by offset because one source unit still maps to one target unit.
+SkipDB series do not rely on nonexistent `imdb_show` entries in AniBridge. The builder uses a two-stage identity bridge:
 
-Provider episode numbering is rebuilt as a deterministic derived index after import using the exact same pinned AniBridge payload used during normalization.
+```text
+SkipDB IMDb show
+  -> Anime Mapping DB accepted TVDB/TMDB title identity
+  -> AniBridge tvdb_show/tmdb_show season mapping
+  -> MAL/AniList/AniDB episode
+```
+
+Conflicted TVDB/TMDB routes are suppressed. When both routes exist they must collapse to one coherent provider/episode identity; disagreement stays unresolved. A single unambiguous route is allowed but gets slightly lower mapping confidence.
+
+Only one-source-episode to one-target-episode AniBridge projections are accepted. Ratio mappings (`|2`, `|-2`, etc.) represent split/combined episode granularity and are deliberately skipped. Non-contiguous target ranges without ratios can be projected by offset because one source unit still maps to one target unit.
+
+After exact projection, a missing episode can be inferred only within the same IMDb season when at least two exact MAL anchors agree on both one MAL title and one constant target-minus-source episode offset. These rows are stored as `inferred-season-offset` with confidence `0.85`; exact dual-route and single-route mappings use `1.0` and `0.98` respectively.
+
+Provider episode numbering is rebuilt as a deterministic derived index after title enrichment using the exact same pinned Anime Mapping DB and AniBridge snapshots used during normalization.
 
 ## Anime Mapping DB projection
 
@@ -131,4 +145,4 @@ When an upstream observation includes full media duration, that duration is stor
 
 `PRAGMA user_version` and `metadata.schema_version` must both match `SCHEMA_VERSION`. Table/column contract changes require a schema version bump.
 
-Build process changes that do not alter the SQLite contract use `build_format_version`. The movie-normalization/title-enrichment integration is a build-format change, not a schema-v3 migration.
+Build process changes that do not alter the SQLite contract use `build_format_version`. Schema v3 is the migration that adds segment-level `mapping_method` and `mapping_confidence`; the corresponding SkipDB bridge pipeline is build format v5.
