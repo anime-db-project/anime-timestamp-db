@@ -1,0 +1,44 @@
+name: Finalize schema v5 branch once
+
+on:
+  push:
+    branches:
+      - refactor/anchor-runtime-v5
+    paths:
+      - ".github/workflows/finalize-v5-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refactor/anchor-runtime-v5
+          fetch-depth: 0
+      - name: Clean validation-only files and README residue
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("README.md")
+          text = path.read_text()
+          text = text.replace(" automatically. citeturn0search1", " automatically.")
+          text = text.replace(
+              "Compared with the immediately preceding validated schema-v4 artifact built from the same project generation,",
+              "Compared with the preceding successful schema-v4 artifact from the same day,",
+          )
+          path.write_text(text)
+          PY
+          git rm .github/workflows/validate-v5-data-once.yml
+          git rm .github/workflows/finalize-v5-once.yml
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Finalize schema v5 documentation and validation cleanup"
+          git push origin HEAD:refactor/anchor-runtime-v5
