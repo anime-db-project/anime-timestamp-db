@@ -43,9 +43,13 @@ The builder consumes the checked-in Baha Anime Skip database from `JacobLinCool/
 
 AniBridge's published mapping file is used at build time to establish safe episode identities. The AniBridge repository is MIT-licensed; `ANIBRIDGE_LICENSE.txt` is included with artifacts. AniBridge's mapping payload itself aggregates upstream mapping sources, so its own provenance documentation should also be consulted for downstream redistribution decisions.
 
-## Excluded sources
+## Open Anime Timestamps
 
-Public downloadability by itself is not treated as redistribution permission. `open-anime-timestamps` remains excluded because no explicit upstream license or equivalent public-dataset statement was found during integration.
+The default build incorporates the public `Ellivers/open-anime-timestamps/timestamps.json` database. Upstream does not currently declare an explicit repository or standalone data license, so Anime Timestamp DB does not invent one. Attribution and exact snapshot provenance are preserved and every artifact includes `OPEN_ANIME_TIMESTAMPS_NOTICE.md`.
+
+The upstream file is also an aggregator. Its record-level `sources` metadata is retained so republished AniSkip/Anime Skip/BetterVRV data is not presented as original Open Anime Timestamps evidence. Multi-source aggregate records remain queryable but are excluded from consensus voting because field-level provenance is not available.
+
+If upstream publishes or changes licensing terms, subsequent builds and redistribution notices must be updated to comply with those terms.
 
 ## Build provenance
 

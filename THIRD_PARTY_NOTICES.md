@@ -49,8 +49,12 @@ MIT License, copyright © 2022 JacobLinCool.
 
 The builder consumes `packages/baha-anime-skip-db/data.json`. Because that bulk file is keyed by Bahamut episode `videoSn` and does not carry a reusable cross-database episode mapping, its ranges remain source-addressable rather than being assigned guessed MAL/AniList/AniDB IDs.
 
-## open-anime-timestamps
+## Open Anime Timestamps
 
-Reviewed source/fork: https://github.com/Ellivers/open-anime-timestamps
+Source: https://github.com/Ellivers/open-anime-timestamps
 
-Not included in default builds because an explicit repository license or equivalent upstream public-dataset statement was not found during integration review.
+Used as an AniDB-native timestamp source and aggregator. Regular AniDB episodes are projected through AniBridge to concrete MAL/AniList/AniDB playback identities. Unresolved ranges remain source-addressable.
+
+The repository currently declares no explicit repository or standalone data license. The project is therefore listed and attributed without assigning it an invented license; see `OPEN_ANIME_TIMESTAMPS_NOTICE.md`. Exact source URL/hash/retrieval provenance is recorded in every build.
+
+Open Anime Timestamps records can report `open_anime_timestamps`, `chapter_data`, `aniskip`, `anime_skip`, `better_vrv`, or combinations. Single-source records retain that lineage. Multi-source records use a non-voting aggregate lineage because the upstream format does not identify which individual field came from which contributor.

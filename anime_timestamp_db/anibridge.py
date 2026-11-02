@@ -219,6 +219,21 @@ class AniBridgeIndex:
     ) -> EpisodeMappingResult:
         return self.resolve_show_episode("imdb_show", imdb_id, season, episode)
 
+    def resolve_anidb_episode(
+        self,
+        anidb_id: str,
+        episode: int,
+        *,
+        scope: str = "R",
+    ) -> EpisodeMappingResult:
+        normalized_scope = str(scope or "R").strip().upper()
+        if normalized_scope not in {"R", "S", "O"}:
+            raise ValueError(f"unsupported AniDB episode scope: {scope}")
+        return self._resolve_episode_source(
+            f"anidb:{str(anidb_id).strip()}:{normalized_scope}",
+            int(episode),
+        )
+
     def resolve_movie_from(
         self,
         source_provider: str,

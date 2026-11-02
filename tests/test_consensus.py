@@ -53,6 +53,75 @@ class ConsensusTests(unittest.TestCase):
                 self.assertIn(rows[0][1], {10000, 11000})
                 self.assertEqual(rows[1][0], 1)
 
+    def test_consensus_votes_once_per_lineage_and_ignores_ineligible_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = root / "runtime.db"
+            evidence = root / "evidence.db"
+            with DatabaseWriter(runtime, evidence) as writer:
+                source_a = writer.source_id(SKIPDB)
+                from anime_timestamp_db.config import OPEN_ANIME_TIMESTAMPS
+
+                source_b = writer.source_id(OPEN_ANIME_TIMESTAMPS)
+                lineage_a = writer.lineage_id("mirror-a", "Mirror A")
+                lineage_b = writer.lineage_id("independent-b", "Independent B")
+                lineage_c = writer.lineage_id("independent-c", "Independent C")
+                aggregate = writer.lineage_id("aggregate", "Aggregate")
+                title = writer.get_or_create_title({"mal": "1"})
+                episode = writer.get_or_create_episode(
+                    title, episode_key="ep:1", episode_number=1
+                )
+                for index in range(5):
+                    writer.add_segment(
+                        episode_id=episode,
+                        source_id=source_a if index == 0 else source_b,
+                        lineage_id=lineage_a,
+                        source_segment_id=f"mirror-{index}",
+                        segment_type="opening",
+                        start_ms=10000,
+                        end_ms=100000,
+                    )
+                for segment_id, lineage in (("b", lineage_b), ("c", lineage_c)):
+                    writer.add_segment(
+                        episode_id=episode,
+                        source_id=source_b,
+                        lineage_id=lineage,
+                        source_segment_id=segment_id,
+                        segment_type="opening",
+                        start_ms=20000,
+                        end_ms=110000,
+                    )
+                writer.add_segment(
+                    episode_id=episode,
+                    source_id=source_b,
+                    lineage_id=aggregate,
+                    source_segment_id="excluded",
+                    segment_type="opening",
+                    start_ms=1000,
+                    end_ms=91000,
+                    consensus_eligible=False,
+                )
+                rebuild_consensus(writer.conn)
+
+            with closing(sqlite3.connect(runtime)) as conn:
+                row = conn.execute(
+                    "SELECT member_count, lineage_count, start_ms FROM consensus_segments"
+                ).fetchone()
+                self.assertIsNotNone(row)
+                assert row is not None
+                self.assertEqual(row[0], 7)
+                self.assertEqual(row[1], 3)
+                self.assertEqual(row[2], 20000)
+                excluded = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM consensus_members cm
+                    JOIN segments s ON s.id=cm.segment_id
+                    WHERE s.source_segment_id='excluded'
+                    """
+                ).fetchone()[0]
+                self.assertEqual(excluded, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

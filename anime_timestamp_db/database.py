@@ -556,6 +556,7 @@ class DatabaseWriter:
         quality_score: float | None = None,
         mapping_method: str = "native",
         mapping_confidence: float = 1.0,
+        consensus_eligible: bool = True,
         votes_up: int = 0,
         votes_down: int = 0,
     ) -> None:
@@ -565,8 +566,8 @@ class DatabaseWriter:
                 episode_id, source_id, lineage_id, source_segment_id,
                 segment_type, start_ms, end_ms, media_duration_ms,
                 quality_score, mapping_method, mapping_confidence,
-                votes_up, votes_down
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                consensus_eligible, votes_up, votes_down
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 episode_id,
@@ -580,6 +581,7 @@ class DatabaseWriter:
                 quality_score,
                 str(mapping_method),
                 max(0.0, min(1.0, float(mapping_confidence))),
+                int(bool(consensus_eligible)),
                 max(0, int(votes_up)),
                 max(0, int(votes_down)),
             ),

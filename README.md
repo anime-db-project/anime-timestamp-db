@@ -22,9 +22,10 @@ The default build uses reproducible public bulk/static files. It does not call r
 | [SkipDB](https://github.com/SkipDB-TV/skipdb) | Large supplementary timestamp dataset | IMDb titles are identified through Anime Mapping DB, then TVDB/TMDB season identities are projected through AniBridge to concrete anime episodes. Exact mappings enter runtime; conservative same-season offset inference is explicitly confidence-weighted; unresolved anime rows remain source-addressable. |
 | [AniBridge mappings](https://github.com/anibridge/anibridge-mappings) | Episode identity bridge | Maps TVDB/TMDB show seasons and movies to MAL/AniList/AniDB playback units. SkipDB IMDb IDs first pass through Anime Mapping DB to reach these bridge identities. Split/combined ratio mappings are deliberately not projected. |
 | [Anime Mapping DB](https://github.com/anime-db-project/anime-mapping-db) | Title-ID enrichment | The latest published `mappings.db.zst` is used only for direct, accepted, conflict-free title aliases. It does **not** invent provider episode numbering. |
+| [Open Anime Timestamps](https://github.com/Ellivers/open-anime-timestamps) | AniDB-native timestamp source and aggregator | Regular AniDB episodes are projected through AniBridge. Single-source provenance is retained; multi-source aggregate rows remain queryable but do not vote in consensus. |
 | [Baha Anime Skip](https://github.com/JacobLinCool/baha-anime-skip) | Source-addressable timestamp dataset | Stored by Bahamut `videoSn`. No fake MAL/AniList identity is invented. |
 
-`open-anime-timestamps` is intentionally excluded from distributable builds while its upstream repository has no explicit license or equivalent public-dataset statement.
+Open Anime Timestamps currently declares no explicit repository/data license. The build lists and attributes it without inventing a license, preserves exact snapshot provenance, and includes `OPEN_ANIME_TIMESTAMPS_NOTICE.md`.
 
 ## What the build produces
 
@@ -54,6 +55,8 @@ The builder deliberately prefers missing data over a plausible but wrong identit
 
 - AniSkip MAL IDs are treated as native MAL identities.
 - SkipDB series use the auditable chain `IMDb -> Anime Mapping DB -> TVDB/TMDB -> AniBridge -> anime episode`; no title-name matching is used.
+- Open Anime Timestamps uses its native AniDB title ID plus regular episode number through `AniDB:R -> AniBridge -> MAL/AniList/AniDB`; unresolved/fractional cases remain source-only.
+- OAT single-source records preserve their reported lineage. Multi-source OAT records are marked `open-anime-timestamps-aggregate` and `consensus_eligible=0` because upstream provenance is record-level rather than field-level.
 - When both TVDB and TMDB routes independently resolve an episode to the same anime identity, the row is marked `exact-dual-bridge` with confidence `1.0`; a single unambiguous route is `exact-single-bridge` with confidence `0.98`.
 - A missing episode may be filled only when at least two exact anchors in the same IMDb season agree on one MAL title and one constant episode offset. Such rows are marked `inferred-season-offset` with confidence `0.85`.
 - AniBridge ratio mappings (`|2`, `|-2`, etc.) are skipped because they represent split/combined episode granularity.
@@ -74,7 +77,7 @@ If both local identities exist under the same normalized title, the builder merg
 
 ## Consensus
 
-Source observations are never overwritten. `weighted-median-v1` materializes consensus separately and links every consensus row back to its exact members. Segment weight also includes `mapping_confidence`, so conservative SkipDB season-offset inference cannot vote as strongly as native or exact episode identity.
+Source observations are never overwritten. `weighted-median-v1` materializes consensus separately and links every consensus row back to its exact members. Segment weight also includes `mapping_confidence`, so conservative SkipDB season-offset inference cannot vote as strongly as native or exact episode identity. Consensus weighting uses at most one representative observation per provenance lineage inside a cluster, preventing mirrors/aggregators from multiplying one upstream vote. Rows with `consensus_eligible=0` remain queryable but do not enter consensus.
 
 The algorithm groups by normalized episode and segment type, separates obviously different media cuts using total duration, clusters close/high-overlap ranges, uses quality/vote-aware weighted medians for boundaries, and stores member/source/lineage counts plus an agreement confidence score.
 
@@ -82,18 +85,22 @@ The default boundary tolerance is 5 seconds and is stored in metadata and the bu
 
 ## Current real-data coverage
 
-A validated schema-v3 build against the 2026-11-01 SkipDB dump contains:
+A validated schema-v4 build with Open Anime Timestamps enabled contains:
 
-- **3,484** normalized anime titles;
-- **41,778** normalized episodes;
-- **114,354** normalized source segments;
-- **85,028** materialized consensus segments;
+- **4,196** normalized anime titles;
+- **57,790** normalized episodes;
+- **211,923** normalized source segments;
+- **23,576** source-only segments;
+- **123,723** materialized consensus segments;
 - **76,663** AniSkip runtime segments;
-- **37,691** SkipDB runtime segments across **1,142** normalized titles and **19,289** episodes;
-- **919** additional approved SkipDB anime segments retained source-only because episode identity remains unresolved;
+- **37,691** SkipDB runtime segments plus **919** additional approved anime segments retained source-only;
+- **97,569** Open Anime Timestamps runtime ranges across **3,835** normalized titles and **52,630** episodes;
+- **2,976** additional Open Anime Timestamps ranges retained source-only;
 - **19,681** Baha source-only segments.
 
-For SkipDB specifically, the same dump contains 809 IMDb titles that Anime Mapping DB can directly tie to anime catalog identities. The bridge normalizes 37,273 exact series segments, 10 exact movie segments, and 408 conservatively inferred same-season segments; unresolved anime rows are preserved instead of dropped. Counts are snapshot-dependent and the authoritative numbers for any artifact live in its `manifest.json` and `audit.json`.
+Open Anime Timestamps contributes **100,545** ranged opening/ending/recap observations in the tested snapshot. Of the normalized OAT rows, **67,622** are single-lineage observations eligible for consensus and **29,947** are multi-source aggregate observations retained in runtime but excluded from consensus voting. All **2,952** upstream point-only `preview_start` markers are preserved in evidence metadata rather than being turned into invented ranges.
+
+For SkipDB specifically, the tested dump contains 809 IMDb titles that Anime Mapping DB can directly tie to anime catalog identities. The bridge normalizes 37,273 exact series segments, 10 exact movie segments, and 408 conservatively inferred same-season segments; unresolved anime rows are preserved instead of dropped. Counts are snapshot-dependent and the authoritative numbers for any artifact live in its `manifest.json` and `audit.json`.
 
 ## Evidence and reproducibility
 
@@ -127,6 +134,7 @@ SHA256SUMS
 DATA_LICENSE.md
 THIRD_PARTY_NOTICES.md
 ANISKIP_PUBLIC_DATA_NOTICE.md
+OPEN_ANIME_TIMESTAMPS_NOTICE.md
 SKIPDB_DATA_LICENSE.txt
 BAHA_LICENSE.txt
 ANIBRIDGE_LICENSE.txt

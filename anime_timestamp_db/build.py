@@ -17,6 +17,7 @@ from anime_timestamp_db.config import (
     ANIME_MAPPING_DB,
     ANISKIP,
     BAHA,
+    OPEN_ANIME_TIMESTAMPS,
     SKIPDB,
 )
 from anime_timestamp_db.consensus import rebuild_consensus
@@ -24,6 +25,9 @@ from anime_timestamp_db.database import DatabaseWriter
 from anime_timestamp_db.download import DownloadedSource, download_source
 from anime_timestamp_db.episode_index import rebuild_episode_ids
 from anime_timestamp_db.importers import import_baha, import_skipdb
+from anime_timestamp_db.open_anime_timestamps_importer import (
+    import_open_anime_timestamps,
+)
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 from anime_timestamp_db.mapping_enrichment import (
     decompress_mapping_database,
@@ -37,7 +41,7 @@ from anime_timestamp_db.schema import (
     SCHEMA_VERSION,
 )
 
-BUILD_FORMAT_VERSION = 5
+BUILD_FORMAT_VERSION = 6
 
 
 def _sha256(path: Path) -> str:
@@ -96,7 +100,14 @@ def build_database(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
-    specs = (ANIBRIDGE, ANIME_MAPPING_DB, ANISKIP, SKIPDB, BAHA)
+    specs = (
+        ANIBRIDGE,
+        ANIME_MAPPING_DB,
+        ANISKIP,
+        SKIPDB,
+        OPEN_ANIME_TIMESTAMPS,
+        BAHA,
+    )
     downloads = {
         spec.key: download_source(spec, cache_dir, force=force_download)
         for spec in specs
@@ -185,6 +196,24 @@ def build_database(
                 mappings=skipdb_mappings,
             )
 
+        oat_snapshot = writer.add_snapshot(
+            OPEN_ANIME_TIMESTAMPS,
+            downloads[OPEN_ANIME_TIMESTAMPS.key],
+            metadata={
+                "role": "anidb-native-timestamp-source-and-aggregator",
+                "episode_normalization": "AniDB:R -> AniBridge -> MAL/AniList/AniDB",
+                "field_level_lineage_available": False,
+                "multi_source_records_consensus_eligible": False,
+                "explicit_redistribution_license_found": False,
+            },
+        )
+        oat_stats = import_open_anime_timestamps(
+            downloads[OPEN_ANIME_TIMESTAMPS.key].path,
+            writer=writer,
+            snapshot_id=oat_snapshot,
+            anibridge=anibridge,
+        )
+
         baha_snapshot = writer.add_snapshot(
             BAHA,
             downloads[BAHA.key],
@@ -226,6 +255,7 @@ def build_database(
         ("DATA_LICENSE.md", None),
         ("THIRD_PARTY_NOTICES.md", None),
         ("ANISKIP_PUBLIC_DATA_NOTICE.md", None),
+        ("OPEN_ANIME_TIMESTAMPS_NOTICE.md", None),
         ("licenses/SKIPDB_DATA_LICENSE.txt", None),
         ("licenses/BAHA_LICENSE.txt", None),
         ("licenses/ANIBRIDGE_LICENSE.txt", None),
@@ -257,6 +287,7 @@ def build_database(
         "imports": {
             "aniskip": aniskip_stats.as_dict(),
             "skipdb": skip_stats.as_dict(),
+            "open-anime-timestamps": oat_stats.as_dict(),
             "baha": baha_stats.as_dict(),
             "anibridge_mapping_entries": bridge_entry_count,
         },

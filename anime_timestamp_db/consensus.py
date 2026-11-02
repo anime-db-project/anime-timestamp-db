@@ -24,12 +24,40 @@ class _Cluster:
     observations: list[_Observation]
 
     @property
+    def representatives(self) -> list[_Observation]:
+        """Choose one vote per provenance lineage inside a timing cluster."""
+        best: dict[int, _Observation] = {}
+        for item in self.observations:
+            current = best.get(item.lineage_id)
+            rank = (
+                item.mapping_confidence,
+                float(item.quality_score or 0.0),
+                item.votes_up,
+                -item.source_id,
+                -item.segment_id,
+            )
+            if current is None:
+                best[item.lineage_id] = item
+                continue
+            current_rank = (
+                current.mapping_confidence,
+                float(current.quality_score or 0.0),
+                current.votes_up,
+                -current.source_id,
+                -current.segment_id,
+            )
+            if rank > current_rank:
+                best[item.lineage_id] = item
+        return [best[key] for key in sorted(best)]
+
+    @property
     def center(self) -> tuple[int, int, int | None]:
-        starts = [item.start_ms for item in self.observations]
-        ends = [item.end_ms for item in self.observations]
+        representatives = self.representatives
+        starts = [item.start_ms for item in representatives]
+        ends = [item.end_ms for item in representatives]
         durations = [
             item.media_duration_ms
-            for item in self.observations
+            for item in representatives
             if item.media_duration_ms is not None
         ]
         return (
@@ -94,14 +122,14 @@ def _weighted_median(items: list[tuple[int, float]]) -> int:
 
 def _confidence(cluster: _Cluster, *, tolerance_ms: int) -> float:
     center_start, center_end, _ = cluster.center
+    representatives = cluster.representatives
     dispersion = sum(
         abs(item.start_ms - center_start) + abs(item.end_ms - center_end)
-        for item in cluster.observations
-    ) / max(1, len(cluster.observations) * 2)
+        for item in representatives
+    ) / max(1, len(representatives) * 2)
     agreement = 1.0 / (1.0 + dispersion / max(1, tolerance_ms))
-    members = len(cluster.observations)
-    lineages = len({item.lineage_id for item in cluster.observations})
-    support = min(1.0, 0.45 + 0.15 * math.sqrt(members) + 0.15 * (lineages - 1))
+    lineages = len(representatives)
+    support = min(1.0, 0.45 + 0.15 * math.sqrt(lineages) + 0.15 * (lineages - 1))
     return round(max(0.0, min(1.0, agreement * support)), 6)
 
 
@@ -132,7 +160,7 @@ def rebuild_consensus(
             SELECT id, source_id, lineage_id, start_ms, end_ms,
                    media_duration_ms, quality_score, mapping_confidence, votes_up
             FROM segments
-            WHERE episode_id=? AND segment_type=?
+            WHERE episode_id=? AND segment_type=? AND consensus_eligible=1
             ORDER BY start_ms, end_ms, id
             """,
             (episode_id, segment_type),
@@ -180,7 +208,8 @@ def rebuild_consensus(
 
         clusters.sort(key=lambda cluster: (cluster.center[0], cluster.center[1]))
         for cluster_index, cluster in enumerate(clusters):
-            weighted = [(item, _weight(item)) for item in cluster.observations]
+            representatives = cluster.representatives
+            weighted = [(item, _weight(item)) for item in representatives]
             start_ms = _weighted_median(
                 [(item.start_ms, weight) for item, weight in weighted]
             )

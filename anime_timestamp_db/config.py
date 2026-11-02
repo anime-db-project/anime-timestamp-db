@@ -71,16 +71,16 @@ BAHA = SourceSpec(
     license_note="MIT repository license",
 )
 
-# Useful, but not part of default public artifacts because the repository does
-# not currently expose an explicit license or a comparable upstream statement
-# that the snapshot itself is a public dataset/export.
 OPEN_ANIME_TIMESTAMPS = SourceSpec(
     key="open-anime-timestamps",
     display_name="Open Anime Timestamps",
     url="https://raw.githubusercontent.com/Ellivers/open-anime-timestamps/master/timestamps.json",
     homepage_url="https://github.com/Ellivers/open-anime-timestamps",
-    source_kind="timestamp-marker",
-    license_note="No explicit upstream license found; disabled for distributable builds",
+    source_kind="timestamp",
+    license_note=(
+        "Public upstream timestamp database; no explicit repository/data license "
+        "is currently declared. Attribution and exact snapshot provenance are preserved."
+    ),
     explicit_redistribution_license=False,
 )
 
@@ -89,8 +89,7 @@ DEFAULT_BUILD_SOURCES = (
     ANIME_MAPPING_DB,
     ANISKIP,
     SKIPDB,
+    OPEN_ANIME_TIMESTAMPS,
     BAHA,
 )
-SOURCE_BY_KEY = {
-    spec.key: spec for spec in (*DEFAULT_BUILD_SOURCES, OPEN_ANIME_TIMESTAMPS)
-}
+SOURCE_BY_KEY = {spec.key: spec for spec in DEFAULT_BUILD_SOURCES}

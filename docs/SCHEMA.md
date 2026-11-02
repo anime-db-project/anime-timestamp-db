@@ -1,6 +1,6 @@
-# Schema v3
+# Schema v4
 
-Schema v3 extends the data-bearing design with explicit episode-mapping provenance and confidence. It separates normalized anime timestamps, source-addressable timestamps, and build evidence instead of forcing every upstream dataset into one identity model.
+Schema v4 extends the data-bearing design with explicit consensus eligibility so aggregator rows can remain queryable without manufacturing extra independent votes. Schema v3 introduced episode-mapping provenance/confidence; v4 adds aggregator-safe consensus semantics. It separates normalized anime timestamps, source-addressable timestamps, and build evidence instead of forcing every upstream dataset into one identity model.
 
 `schema_version` changes only when the SQLite table/column contract changes. Builder behavior can evolve independently through `build_format_version`.
 
@@ -24,7 +24,8 @@ Title identity currently comes from three paths:
 
 1. native MAL IDs in AniSkip;
 2. anime IDs supplied by safe SkipDB episode projection through Anime Mapping DB plus AniBridge, and direct AniBridge movie mappings;
-3. direct accepted, conflict-free aliases from the published Anime Mapping DB.
+3. AniDB-native Open Anime Timestamps episodes projected through AniBridge;
+4. direct accepted, conflict-free aliases from the published Anime Mapping DB.
 
 Anime Mapping DB enrichment is intentionally **title-only**. If it adds a Kitsu, Shikimori, IMDb, TVDB, TMDB, aniSearch, or another provider ID, that does not prove that the provider's episode number `N` equals MAL episode `N`.
 
@@ -56,17 +57,17 @@ Movie normalization may repoint an existing source reference from local `movie` 
 
 ### `segments`
 
-Approved normalized source observations. Stores source and lineage, stable source-record ID, normalized segment type, start/end milliseconds, optional full media duration, quality score and vote counts. Schema v3 additionally stores `mapping_method` and `mapping_confidence` (`0..1`) so native/exact/inferred episode identity remains queryable and can influence consensus weight.
+Approved normalized source observations. Stores source and lineage, stable source-record ID, normalized segment type, start/end milliseconds, optional full media duration, quality score and vote counts. `mapping_method` and `mapping_confidence` (`0..1`) keep native/exact/inferred episode identity queryable. Schema v4 adds `consensus_eligible` (`0/1`): a valid range can stay queryable while being deliberately excluded from consensus when independent field-level provenance cannot be established.
 
 ### `source_segments`
 
-Valid ranges that are not safely cross-database-normalized. Baha Anime Skip uses this table because its bulk database is keyed by Bahamut `videoSn`. SkipDB also uses it for approved rows whose IMDb title is confidently anime but whose concrete season/episode mapping remains unresolved.
+Valid ranges that are not safely cross-database-normalized. Baha Anime Skip uses this table because its bulk database is keyed by Bahamut `videoSn`. SkipDB uses it for approved rows whose IMDb title is confidently anime but whose concrete season/episode mapping remains unresolved. Open Anime Timestamps uses it for AniDB episodes that cannot be projected safely through AniBridge.
 
 ### `consensus_segments` / `consensus_members`
 
 Consensus is materialized derived data, never a replacement for originals. Each row stores boundaries, media duration when available, member/source/lineage counts, confidence, algorithm, and tolerance. `consensus_members` keeps exact provenance back to every contributing normalized observation.
 
-Consensus is built only after movie identity normalization and provider episode-index reconstruction.
+Consensus is built only after movie identity normalization and provider episode-index reconstruction. Only `consensus_eligible=1` rows are considered. Within each timing cluster, weighted boundaries use at most one representative observation per `lineage_id`; mirrored copies of the same upstream lineage therefore cannot multiply voting weight. `consensus_members` still preserves all eligible member rows for auditability.
 
 ## Evidence: `timestamps-evidence.db`
 
@@ -99,7 +100,8 @@ Timestamp records commonly use:
 - `unmapped`: no supported anime identity/episode projection;
 - `ambiguous`: identity conflict; runtime row suppressed;
 - `source-only`: valid anime timestamp retained under its upstream episode key because the exact episode identity remains unresolved;
-- `invalid`: malformed/missing identity or invalid range.
+- `invalid`: malformed/missing identity or invalid range;
+- `empty`: upstream record has no ranged timestamp fields (for example an OAT preview-only point marker retained in metadata).
 
 Build-time mapping evidence can also use `mapped` or `ambiguous` depending on whether aliases were attached safely.
 
@@ -126,6 +128,22 @@ After exact projection, a missing episode can be inferred only within the same I
 
 Provider episode numbering is rebuilt as a deterministic derived index after title enrichment using the exact same pinned Anime Mapping DB and AniBridge snapshots used during normalization.
 
+## Open Anime Timestamps / AniBridge projection
+
+Open Anime Timestamps is keyed by AniDB title ID. Regular positive integer episode numbers use the direct episode bridge:
+
+```text
+Open Anime Timestamps AniDB title + episode
+  -> AniBridge anidb:<id>:R
+  -> MAL/AniList/AniDB episode
+```
+
+Fractional/zero/unresolved episode identities are retained source-only rather than flattened into regular numbering. AniDB `R` episode identity is recorded in `episode_ids` when projection succeeds.
+
+The upstream `sources` array is record-level provenance. For a single reported source, the importer assigns the matching lineage (`open-anime-timestamps`, `open-anime-timestamps-chapter-data`, `aniskip`, `anime-skip`, or `better-vrv`). If several origins are listed, the record uses `open-anime-timestamps-aggregate` and its ranges are stored with `consensus_eligible=0`; the upstream format does not prove which individual field came from which origin.
+
+`preview_start` is a point marker rather than a range. Because the runtime segment schema requires a proven end boundary, point-only preview starts are preserved in evidence metadata and are not converted into guessed skip ranges.
+
 ## Anime Mapping DB projection
 
 Only a single direct accepted edge from an existing MAL node is considered. The upstream directional `conflicts` table is honored, and the timestamp builder performs a second local conflict check before adding an alias.
@@ -145,4 +163,4 @@ When an upstream observation includes full media duration, that duration is stor
 
 `PRAGMA user_version` and `metadata.schema_version` must both match `SCHEMA_VERSION`. Table/column contract changes require a schema version bump.
 
-Build process changes that do not alter the SQLite contract use `build_format_version`. Schema v3 is the migration that adds segment-level `mapping_method` and `mapping_confidence`; the corresponding SkipDB bridge pipeline is build format v5.
+Build process changes that do not alter the SQLite contract use `build_format_version`. Schema v3 added segment-level `mapping_method` and `mapping_confidence`; schema v4 adds `segments.consensus_eligible` for aggregator-safe voting. The Open Anime Timestamps integration and lineage-aware consensus behavior use build format v6.
