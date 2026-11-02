@@ -30,6 +30,9 @@ def _mapping_db(path: Path) -> None:
                 max_weight INTEGER NOT NULL,
                 PRIMARY KEY(a_node, b_node)
             ) WITHOUT ROWID;
+            CREATE INDEX edges_b_accepted_idx
+                ON edges(b_node, a_node)
+                WHERE status='accepted';
             CREATE TABLE conflicts (
                 source_node INTEGER NOT NULL,
                 target_provider TEXT NOT NULL,
@@ -104,6 +107,36 @@ class SkipDBMappingTests(unittest.TestCase):
                 else inferred.confidence,
                 0.85,
             )
+
+    def test_compact_edge_lookup_uses_primary_and_reverse_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "mappings.db"
+            _mapping_db(path)
+            bridge = AniBridgeIndex({})
+            with SkipDBMappingIndex(path, bridge) as index:
+                node_id = index._imdb_node("tt1")
+                assert node_id is not None
+                plan = index.conn.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    WITH direct_targets(target_node) AS (
+                        SELECT b_node FROM edges
+                        WHERE a_node=? AND status='accepted'
+                        UNION ALL
+                        SELECT a_node FROM edges
+                        WHERE b_node=? AND status='accepted'
+                    )
+                    SELECT target.external_id
+                    FROM direct_targets AS direct
+                    JOIN nodes AS target ON target.id=direct.target_node
+                    WHERE target.provider=?
+                    ORDER BY target.external_id
+                    """,
+                    (node_id, node_id, "tvdb"),
+                ).fetchall()
+            details = " ".join(str(row[3]) for row in plan)
+            self.assertIn("PRIMARY KEY", details)
+            self.assertNotIn("SCAN edges", details)
 
     def test_conflicted_bridge_route_is_not_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

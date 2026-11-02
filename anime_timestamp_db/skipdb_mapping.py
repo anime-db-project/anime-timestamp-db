@@ -198,16 +198,22 @@ class SkipDBMappingIndex:
                 return ()
         rows = self.conn.execute(
             """
+            WITH direct_targets(target_node) AS (
+                SELECT b_node
+                FROM edges
+                WHERE a_node=? AND status='accepted'
+                UNION ALL
+                SELECT a_node
+                FROM edges
+                WHERE b_node=? AND status='accepted'
+            )
             SELECT target.external_id
-            FROM edges AS edge
-            JOIN nodes AS target
-              ON target.id=CASE WHEN edge.a_node=? THEN edge.b_node ELSE edge.a_node END
-            WHERE edge.status='accepted'
-              AND (edge.a_node=? OR edge.b_node=?)
-              AND target.provider=?
+            FROM direct_targets AS direct
+            JOIN nodes AS target ON target.id=direct.target_node
+            WHERE target.provider=?
             ORDER BY target.external_id
             """,
-            (node_id, node_id, node_id, provider),
+            (node_id, node_id, provider),
         )
         result = tuple(dict.fromkeys(str(row[0]) for row in rows))
         self._route_cache[cache_key] = result
