@@ -9,9 +9,10 @@ from contextlib import closing
 from pathlib import Path
 
 from anime_timestamp_db.anibridge import AniBridgeIndex
+from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.config import ANISKIP, BAHA, SKIPDB
 from anime_timestamp_db.database import DatabaseWriter
-from anime_timestamp_db.importers import import_aniskip, import_baha, import_skipdb
+from anime_timestamp_db.importers import import_baha, import_skipdb
 
 
 class _Download:
