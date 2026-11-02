@@ -37,121 +37,22 @@ jobs:
                   raise SystemExit(f"expected block not found in {path}: {old[:80]!r}")
               file.write_text(text.replace(old, new, count))
 
-          replace(
-              "anime_timestamp_db/schema.py",
-              '''CREATE INDEX segments_source_idx
-    ON segments(source_id, episode_id, segment_type);
-CREATE INDEX segments_lineage_idx
-    ON segments(lineage_id, episode_id, segment_type);
-CREATE INDEX segments_duration_idx
-    ON segments(episode_id, segment_type, media_duration_ms);
-''',
-              '''-- One episode-first index covers resolver and consensus scans. Source,
--- lineage and duration filters operate on the already-small per-episode row set.
-''',
-          )
-          replace(
-              "anime_timestamp_db/schema.py",
-              '''CREATE INDEX consensus_episode_idx
-    ON consensus_segments(episode_id, segment_type, cluster_index);
-CREATE INDEX consensus_duration_idx
-    ON consensus_segments(episode_id, segment_type, media_duration_ms);
-''',
-              '''-- UNIQUE(episode_id, segment_type, cluster_index) already provides the
--- episode-first index used by consensus lookups; do not duplicate it.
-''',
-          )
-          replace(
-              "anime_timestamp_db/schema.py",
-              "    payload_sha256 TEXT NOT NULL DEFAULT '',\n",
-              "    payload_sha256 BLOB NOT NULL DEFAULT X''\n        CHECK(length(payload_sha256) IN (0, 32)),\n",
-          )
-          replace(
-              "anime_timestamp_db/schema.py",
-              '''CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);
-CREATE INDEX records_normalization_idx
-    ON records(normalization_status, snapshot_id);
+          replace("anime_timestamp_db/schema.py", "CREATE INDEX segments_source_idx\n    ON segments(source_id, episode_id, segment_type);\nCREATE INDEX segments_lineage_idx\n    ON segments(lineage_id, episode_id, segment_type);\nCREATE INDEX segments_duration_idx\n    ON segments(episode_id, segment_type, media_duration_ms);\n", "-- One episode-first index covers resolver and consensus scans. Source,\n-- lineage and duration filters operate on the already-small per-episode row set.\n")
+          replace("anime_timestamp_db/schema.py", "CREATE INDEX consensus_episode_idx\n    ON consensus_segments(episode_id, segment_type, cluster_index);\nCREATE INDEX consensus_duration_idx\n    ON consensus_segments(episode_id, segment_type, media_duration_ms);\n", "-- UNIQUE(episode_id, segment_type, cluster_index) already provides the\n-- episode-first index used by consensus lookups; do not duplicate it.\n")
+          replace("anime_timestamp_db/schema.py", "    payload_sha256 TEXT NOT NULL DEFAULT '',\n", "    payload_sha256 BLOB NOT NULL DEFAULT X''\n        CHECK(length(payload_sha256) IN (0, 32)),\n")
+          replace("anime_timestamp_db/schema.py", "CREATE INDEX records_snapshot_idx ON records(snapshot_id, id);\nCREATE INDEX records_normalization_idx\n    ON records(normalization_status, snapshot_id);\n\n", "-- Evidence is append-only build provenance. With only a handful of snapshots,\n-- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.\n\n")
 
-''',
-              '''-- Evidence is append-only build provenance. With only a handful of snapshots,
--- audit/grouping scans are cheaper than carrying multi-megabyte secondary indexes.
+          replace("anime_timestamp_db/database.py", "def _prepare_path(path: Path, *, overwrite: bool) -> Path:\n", "def _sha256_blob(value: str | bytes) -> bytes:\n    if isinstance(value, bytes):\n        digest = value\n    else:\n        text = str(value or \"\").strip()\n        if not text:\n            return b\"\"\n        try:\n            digest = bytes.fromhex(text)\n        except ValueError as exc:\n            raise ValueError(\"payload_sha256 must be hexadecimal SHA-256\") from exc\n    if len(digest) not in (0, 32):\n        raise ValueError(\"payload_sha256 must contain exactly 32 bytes\")\n    return digest\n\n\ndef _prepare_path(path: Path, *, overwrite: bool) -> Path:\n")
+          replace("anime_timestamp_db/database.py", "        payload_sha256: str = \"\",\n", "        payload_sha256: str | bytes = b\"\",\n")
+          replace("anime_timestamp_db/database.py", "                payload_sha256,\n                normalization_status,\n", "                _sha256_blob(payload_sha256),\n                normalization_status,\n")
 
-''',
-          )
+          replace("anime_timestamp_db/aniskip_importer.py", "                base_segment_id = digest\n", "                base_segment_id = digest[:32]\n")
+          replace("anime_timestamp_db/aniskip_importer.py", "                base_segment_id = external_id or row_id or digest\n", "                base_segment_id = external_id or row_id or digest[:32]\n")
+          replace("anime_timestamp_db/importers.py", "        record_key = f\"skipdb:{digest}\"\n", "        record_key = f\"skipdb:{digest[:32]}\"\n")
+          replace("anime_timestamp_db/build.py", "BUILD_FORMAT_VERSION = 7\n", "BUILD_FORMAT_VERSION = 8\n")
 
-          replace(
-              "anime_timestamp_db/database.py",
-              '''def _prepare_path(path: Path, *, overwrite: bool) -> Path:
-''',
-              '''def _sha256_blob(value: str | bytes) -> bytes:
-    if isinstance(value, bytes):
-        digest = value
-    else:
-        text = str(value or "").strip()
-        if not text:
-            return b""
-        try:
-            digest = bytes.fromhex(text)
-        except ValueError as exc:
-            raise ValueError("payload_sha256 must be hexadecimal SHA-256") from exc
-    if len(digest) not in (0, 32):
-        raise ValueError("payload_sha256 must contain exactly 32 bytes")
-    return digest
-
-
-def _prepare_path(path: Path, *, overwrite: bool) -> Path:
-''',
-          )
-          replace(
-              "anime_timestamp_db/database.py",
-              '        payload_sha256: str = "",\n',
-              '        payload_sha256: str | bytes = b"",\n',
-          )
-          replace(
-              "anime_timestamp_db/database.py",
-              '''                payload_sha256,
-                normalization_status,
-''',
-              '''                _sha256_blob(payload_sha256),
-                normalization_status,
-''',
-          )
-
-          replace(
-              "anime_timestamp_db/aniskip_importer.py",
-              "                base_segment_id = digest\n",
-              "                base_segment_id = digest[:32]\n",
-          )
-          replace(
-              "anime_timestamp_db/aniskip_importer.py",
-              "                base_segment_id = external_id or row_id or digest\n",
-              "                base_segment_id = external_id or row_id or digest[:32]\n",
-          )
-          replace(
-              "anime_timestamp_db/importers.py",
-              '        record_key = f"skipdb:{digest}"\n',
-              '        record_key = f"skipdb:{digest[:32]}"\n',
-          )
-          replace(
-              "anime_timestamp_db/build.py",
-              "BUILD_FORMAT_VERSION = 7\n",
-              "BUILD_FORMAT_VERSION = 8\n",
-          )
-
-          replace(
-              "docs/SCHEMA.md",
-              '''Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.
-''',
-              '''Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot. Full per-record SHA-256 digests are stored as 32-byte BLOBs rather than 64-character hex text; synthetic AniSkip/SkipDB record IDs retain a source prefix plus a 128-bit digest token while the full digest remains available in evidence.
-''',
-          )
-          replace(
-              "docs/SCHEMA.md",
-              '''- stable source segment ID;
-''',
-              '''- compact stable source segment ID;
-''',
-          )
+          replace("docs/SCHEMA.md", "Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot.\n", "Evidence metadata is intentionally compact. Large repeated Anime Mapping DB alias dictionaries and AniBridge target lists are not copied into every row when the same information remains reconstructible from the pinned source snapshot. Full per-record SHA-256 digests are stored as 32-byte BLOBs rather than 64-character hex text; synthetic AniSkip/SkipDB record IDs retain a source prefix plus a 128-bit digest token while the full digest remains available in evidence.\n")
+          replace("docs/SCHEMA.md", "- stable source segment ID;\n", "- compact stable source segment ID;\n")
           PY
 
       - name: Install and validate
@@ -181,12 +82,7 @@ def _prepare_path(path: Path, *, overwrite: bool) -> Path:
           import json
           from pathlib import Path
           manifest = json.loads(Path("artifacts/manifest.json").read_text())
-          for name in (
-              "timestamps.db",
-              "timestamps.db.zst",
-              "timestamps-evidence.db",
-              "timestamps-evidence.db.zst",
-          ):
+          for name in ("timestamps.db", "timestamps.db.zst", "timestamps-evidence.db", "timestamps-evidence.db.zst"):
               item = manifest["artifacts"][name]
               print(f"{name}\t{item['size_bytes']}\t{item['sha256']}")
           PY
