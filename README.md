@@ -141,13 +141,13 @@ Compared with the preceding successful schema-v4 artifact from the same day, the
 
 | Artifact | v4 | v5 | Reduction |
 | --- | ---: | ---: | ---: |
-| `timestamps.db` | 100,433,920 B | 94,126,080 B | **6.28%** |
-| `timestamps.db.zst` | 29,654,953 B | 27,778,969 B | **6.33%** |
-| `timestamps-evidence.db` | 205,631,488 B | 182,784,000 B | **11.11%** |
-| `timestamps-evidence.db.zst` | 39,729,258 B | 38,235,255 B | **3.76%** |
-| GitHub Actions artifact | 148,320,904 B | 140,511,813 B | **5.26%** |
+| `timestamps.db` | 100,433,920 B | 68,227,072 B | **32.07%** |
+| `timestamps.db.zst` | 29,654,953 B | 19,824,575 B | **33.15%** |
+| `timestamps-evidence.db` | 205,631,488 B | 143,065,088 B | **30.43%** |
+| `timestamps-evidence.db.zst` | 39,729,258 B | 32,056,171 B | **19.31%** |
+| GitHub Actions artifact | 148,320,904 B | 110,099,940 B | **25.77%** |
 
-The main savings come from removing the duplicated title alias layer and repeated mapping metadata. In the validation databases, `title_ids` disappeared completely and the evidence `records` table shrank substantially.
+The main savings come from removing the duplicated title alias layer, compacting synthetic AniSkip/SkipDB IDs, storing full evidence SHA-256 digests as 32-byte BLOBs, and removing redundant SQLite indexes whose queries are already covered by episode-first/UNIQUE indexes. `title_ids` disappears completely while runtime lookup plans remain episode-indexed.
 
 The slightly smaller normalized coverage is intentional, not data loss: rows that could not safely converge on one AMDB anchor were retained as source-only observations.
 

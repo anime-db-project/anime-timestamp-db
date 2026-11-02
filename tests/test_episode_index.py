@@ -63,6 +63,7 @@ class EpisodeIndexTests(unittest.TestCase):
                 ).fetchall()
 
             self.assertEqual(stats.provider_episode_ids, 3)
+            self.assertEqual(stats.provider_episode_ids_inserted, 3)
             self.assertEqual(
                 rows,
                 [
