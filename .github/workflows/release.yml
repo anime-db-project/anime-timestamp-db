@@ -111,7 +111,10 @@ jobs:
           stage="$(mktemp -d)"
           git archive --format=tar --prefix="${prefix}/" "$GITHUB_SHA" \
             | tar -xf - -C "$stage"
-          7z a -t7z -mx=9 "$seven" "$stage/$prefix" >/dev/null
+          (
+            cd "$stage"
+            7z a -t7z -mx=9 "$GITHUB_WORKSPACE/$seven" "$prefix" >/dev/null
+          )
           rm -rf "$stage"
 
           {
@@ -138,19 +141,27 @@ jobs:
               ! -name '*-source.7z' \
               -print | sort
           )
-          gh release create "$tag" "${base_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$tag" \
-            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published first; explicit source archives are appended as the final assets."
 
-          # Keep explicit source archives at the end of the asset list.
-          gh release upload "$tag" \
+          # GitHub renders newer release assets before older ones. Create a draft
+          # with source archives first, then upload database assets so the explicit
+          # source archives end up at the bottom of the visible asset list.
+          gh release create "$tag" \
             artifacts/*-source.zip \
             artifacts/*-source.tar.zst \
             artifacts/*-source.7z \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are rendered above the explicit source archives." \
+            --draft
+
+          gh release upload "$tag" "${base_assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+          gh release edit "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
 
       - name: Existing release
         if: steps.existing.outputs.exists == 'true'
