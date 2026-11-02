@@ -120,16 +120,22 @@ def inspect_database(path: Path) -> dict[str, Any]:
         for table in wanted:
             if table not in tables:
                 raise ValueError(f"Missing required table {table!r}")
-            counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            counts[table] = int(
+                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
         return {"path": str(Path(path)), "metadata": metadata, "counts": counts}
 
 
 def inspect_database_json(path: Path) -> str:
-    return json.dumps(inspect_database(path), ensure_ascii=False, indent=2, sort_keys=True)
+    return json.dumps(
+        inspect_database(path), ensure_ascii=False, indent=2, sort_keys=True
+    )
 
 
 class DatabaseWriter:
-    def __init__(self, runtime_path: Path, evidence_path: Path, *, overwrite: bool = True) -> None:
+    def __init__(
+        self, runtime_path: Path, evidence_path: Path, *, overwrite: bool = True
+    ) -> None:
         create_runtime_database(runtime_path, overwrite=overwrite)
         create_evidence_database(evidence_path, overwrite=overwrite)
         self.runtime_path = Path(runtime_path)
@@ -250,7 +256,8 @@ class DatabaseWriter:
 
     def set_snapshot_record_count(self, snapshot_id: int, count: int) -> None:
         self.evidence.execute(
-            "UPDATE source_snapshots SET record_count=? WHERE id=?", (count, snapshot_id)
+            "UPDATE source_snapshots SET record_count=? WHERE id=?",
+            (count, snapshot_id),
         )
 
     def add_evidence_record(
@@ -361,13 +368,17 @@ class DatabaseWriter:
             )
         }
         if len(existing) > 1:
-            raise IdentityConflict(f"IDs resolve to multiple existing titles: {cleaned}")
+            raise IdentityConflict(
+                f"IDs resolve to multiple existing titles: {cleaned}"
+            )
 
         if existing:
             title_id = next(iter(existing))
         else:
             priority = ("mal", "anilist", "anidb")
-            canonical_provider = next((p for p in priority if p in cleaned), sorted(cleaned)[0])
+            canonical_provider = next(
+                (p for p in priority if p in cleaned), sorted(cleaned)[0]
+            )
             canonical_id = cleaned[canonical_provider]
             cursor = self.conn.execute(
                 """
@@ -563,5 +574,7 @@ class DatabaseWriter:
             conn.commit()
 
 
-def count_by(conn: sqlite3.Connection, query: str, params: Iterable[object] = ()) -> dict[str, int]:
+def count_by(
+    conn: sqlite3.Connection, query: str, params: Iterable[object] = ()
+) -> dict[str, int]:
     return {str(row[0]): int(row[1]) for row in conn.execute(query, tuple(params))}

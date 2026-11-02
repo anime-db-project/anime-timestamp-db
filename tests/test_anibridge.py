@@ -26,22 +26,21 @@ class AniBridgeTests(unittest.TestCase):
         result = index.resolve_series_episode("tt1", 2, 3)
         self.assertEqual(result.skipped_complex_targets, 0)
         self.assertEqual(
-            {(x.descriptor.provider, x.descriptor.external_id, x.episode_number) for x in result.targets},
+            {
+                (x.descriptor.provider, x.descriptor.external_id, x.episode_number)
+                for x in result.targets
+            },
             {("mal", "100", 7), ("anilist", "200", 7), ("anidb", "300", 7)},
         )
 
     def test_ratio_mapping_is_not_projected(self) -> None:
-        index = AniBridgeIndex(
-            {"imdb_show:tt1:s1": {"mal:100": {"1-12": "1-24|2"}}}
-        )
+        index = AniBridgeIndex({"imdb_show:tt1:s1": {"mal:100": {"1-12": "1-24|2"}}})
         result = index.resolve_series_episode("tt1", 1, 2)
         self.assertEqual(result.targets, ())
         self.assertEqual(result.skipped_complex_targets, 1)
 
     def test_multi_target_ranges_are_offset_mapped(self) -> None:
-        index = AniBridgeIndex(
-            {"imdb_show:tt1:s1": {"mal:100": {"1-4": "1-2,4-5"}}}
-        )
+        index = AniBridgeIndex({"imdb_show:tt1:s1": {"mal:100": {"1-4": "1-2,4-5"}}})
         self.assertEqual(
             index.resolve_series_episode("tt1", 1, 3).targets[0].episode_number,
             4,

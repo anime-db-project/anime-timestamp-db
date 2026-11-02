@@ -103,7 +103,9 @@ class ImporterTests(unittest.TestCase):
                 )
                 self.assertNotIn("private-user-id", evidence_text)
 
-    def test_skipdb_import_keeps_evidence_but_runtime_only_approved_mapped(self) -> None:
+    def test_skipdb_import_keeps_evidence_but_runtime_only_approved_mapped(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dump = root / "skipdb.json"
@@ -178,9 +180,7 @@ class ImporterTests(unittest.TestCase):
                     conn.execute("SELECT episode_key FROM episodes").fetchone()[0],
                     "ep:2",
                 )
-                ids = dict(
-                    conn.execute("SELECT provider, external_id FROM title_ids")
-                )
+                ids = dict(conn.execute("SELECT provider, external_id FROM title_ids"))
                 self.assertEqual(ids, {"mal": "10", "anilist": "20"})
             with closing(sqlite3.connect(evidence)) as conn:
                 self.assertEqual(

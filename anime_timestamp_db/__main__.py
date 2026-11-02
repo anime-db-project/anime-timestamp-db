@@ -46,7 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     build_cmd.add_argument("--force-download", action="store_true")
     build_cmd.add_argument("--consensus-tolerance-ms", type=int, default=5000)
 
-    audit_cmd = subparsers.add_parser("audit", help="Audit runtime + evidence databases")
+    audit_cmd = subparsers.add_parser(
+        "audit", help="Audit runtime + evidence databases"
+    )
     audit_cmd.add_argument("--db", type=Path, required=True)
     audit_cmd.add_argument("--evidence-db", type=Path, required=True)
 
@@ -63,7 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
     lookup.add_argument("--consensus", action="store_true")
 
     source_lookup = subparsers.add_parser(
-        "source-lookup", help="Resolve source-addressable timestamps such as Baha videoSn"
+        "source-lookup",
+        help="Resolve source-addressable timestamps such as Baha videoSn",
     )
     source_lookup.add_argument("--db", type=Path, required=True)
     source_lookup.add_argument("--source", required=True)

@@ -62,12 +62,16 @@ def _compatible(
         abs(observation.start_ms - center_start) <= tolerance_ms
         and abs(observation.end_ms - center_end) <= tolerance_ms
     )
-    return close_boundaries or _iou(
-        observation.start_ms,
-        observation.end_ms,
-        center_start,
-        center_end,
-    ) >= 0.75
+    return (
+        close_boundaries
+        or _iou(
+            observation.start_ms,
+            observation.end_ms,
+            center_start,
+            center_end,
+        )
+        >= 0.75
+    )
 
 
 def _weight(item: _Observation) -> float:

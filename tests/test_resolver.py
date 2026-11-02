@@ -58,9 +58,15 @@ class ResolverTests(unittest.TestCase):
             resolver = TimestampResolver(runtime)
             self.assertEqual(resolver.episode_key("mal", "1", 1), "ep:1")
             self.assertEqual(resolver.title_ids("mal", "1")["anilist"], ["2"])
-            self.assertEqual(resolver.get_segments("mal", "1", "ep:1")[0].source, "skipdb")
-            self.assertEqual(resolver.get_consensus("mal", "1", "ep:1")[0].member_count, 1)
-            self.assertEqual(resolver.get_source_segments("baha", "999")[0].start_ms, 9000)
+            self.assertEqual(
+                resolver.get_segments("mal", "1", "ep:1")[0].source, "skipdb"
+            )
+            self.assertEqual(
+                resolver.get_consensus("mal", "1", "ep:1")[0].member_count, 1
+            )
+            self.assertEqual(
+                resolver.get_source_segments("baha", "999")[0].start_ms, 9000
+            )
 
 
 if __name__ == "__main__":

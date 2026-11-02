@@ -39,7 +39,9 @@ def _compress(source: Path, target: Path, *, level: int = 10) -> None:
         compressor.copy_stream(src, dst)
 
 
-def _copy_notice(name: str, output_dir: Path, *, output_name: str | None = None) -> None:
+def _copy_notice(
+    name: str, output_dir: Path, *, output_name: str | None = None
+) -> None:
     root = Path(__file__).resolve().parent.parent
     source = root / name
     if source.is_file():

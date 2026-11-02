@@ -179,7 +179,11 @@ def audit_evidence(path: Path) -> dict[str, Any]:
 def audit_databases(runtime_path: Path, evidence_path: Path) -> dict[str, Any]:
     runtime = audit_runtime(runtime_path)
     evidence = audit_evidence(evidence_path)
-    return {"ok": bool(runtime["ok"] and evidence["ok"]), "runtime": runtime, "evidence": evidence}
+    return {
+        "ok": bool(runtime["ok"] and evidence["ok"]),
+        "runtime": runtime,
+        "evidence": evidence,
+    }
 
 
 def audit_json(runtime_path: Path, evidence_path: Path) -> str:

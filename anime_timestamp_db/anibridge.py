@@ -148,7 +148,11 @@ class AniBridgeIndex:
         skipped_complex = 0
         for target_raw, range_map in bucket.items():
             descriptor = parse_descriptor(target_raw)
-            if descriptor is None or descriptor.provider not in {"mal", "anilist", "anidb"}:
+            if descriptor is None or descriptor.provider not in {
+                "mal",
+                "anilist",
+                "anidb",
+            }:
                 continue
             if not isinstance(range_map, dict) or not range_map:
                 continue
@@ -174,7 +178,12 @@ class AniBridgeIndex:
                 targets.append(EpisodeTarget(descriptor, mapped_episode))
 
         unique = {
-            (t.descriptor.provider, t.descriptor.external_id, t.descriptor.scope, t.episode_number): t
+            (
+                t.descriptor.provider,
+                t.descriptor.external_id,
+                t.descriptor.scope,
+                t.episode_number,
+            ): t
             for t in targets
         }
         ordered = tuple(
@@ -199,7 +208,11 @@ class AniBridgeIndex:
         found: dict[tuple[str, str, str | None], Descriptor] = {}
         for target_raw in bucket:
             descriptor = parse_descriptor(target_raw)
-            if descriptor is None or descriptor.provider not in {"mal", "anilist", "anidb"}:
+            if descriptor is None or descriptor.provider not in {
+                "mal",
+                "anilist",
+                "anidb",
+            }:
                 continue
             key = (descriptor.provider, descriptor.external_id, descriptor.scope)
             found[key] = descriptor

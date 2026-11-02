@@ -221,7 +221,9 @@ class TimestampResolver:
                 str(episode_key).strip(),
             ]
         else:
-            distance_select = "ABS(COALESCE(c.media_duration_ms, ?) - ?) AS duration_distance"
+            distance_select = (
+                "ABS(COALESCE(c.media_duration_ms, ?) - ?) AS duration_distance"
+            )
             params = [
                 media_duration_ms,
                 media_duration_ms,

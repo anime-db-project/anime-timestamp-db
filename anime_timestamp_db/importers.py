@@ -282,7 +282,9 @@ def import_aniskip(
                 mal_id = str(mal_id_int or "")
                 episode_text = episode[0] if episode is not None else ""
                 normalization_status = "invalid"
-                normalization_reason = "missing MAL/episode/type or invalid timestamp range"
+                normalization_reason = (
+                    "missing MAL/episode/type or invalid timestamp range"
+                )
                 normalized_id = ""
                 normalized_episode_key = ""
                 episode_id = None
@@ -438,7 +440,9 @@ def import_skipdb(
                     per_provider.setdefault(descriptor.provider, set()).add(
                         descriptor.external_id
                     )
-                if per_provider and all(len(values) == 1 for values in per_provider.values()):
+                if per_provider and all(
+                    len(values) == 1 for values in per_provider.values()
+                ):
                     ids = {
                         provider: next(iter(values))
                         for provider, values in per_provider.items()
@@ -448,7 +452,9 @@ def import_skipdb(
                     episode_key = "movie"
 
             if ids and episode_number is not None and episode_key:
-                canonical_provider = min(ids, key=lambda p: _PROVIDER_PRIORITY.get(p, 99))
+                canonical_provider = min(
+                    ids, key=lambda p: _PROVIDER_PRIORITY.get(p, 99)
+                )
                 normalization_status = "mapped"
                 normalization_reason = "AniBridge one-to-one episode mapping"
                 normalized_provider = canonical_provider
@@ -458,7 +464,9 @@ def import_skipdb(
 
                 if status == "approved":
                     try:
-                        title_id = writer.get_or_create_title(ids, display_title=display_title)
+                        title_id = writer.get_or_create_title(
+                            ids, display_title=display_title
+                        )
                         episode_id = writer.get_or_create_episode(
                             title_id,
                             episode_key=episode_key,
@@ -485,7 +493,9 @@ def import_skipdb(
                         runtime_target = (episode_id, episode_key)
             else:
                 normalization_status = "unmapped"
-                normalization_reason = "no safe one-to-one AniBridge anime episode mapping"
+                normalization_reason = (
+                    "no safe one-to-one AniBridge anime episode mapping"
+                )
                 stats.unmapped += 1
 
         metadata = {
@@ -515,7 +525,9 @@ def import_skipdb(
         )
 
         if valid_range:
-            assert segment_type is not None and start_ms is not None and end_ms is not None
+            assert (
+                segment_type is not None and start_ms is not None and end_ms is not None
+            )
             writer.add_evidence_segment(
                 record_id,
                 source_segment_id=source_segment_id,
@@ -582,7 +594,9 @@ def import_baha(
             continue
         for raw_type, raw_range in chapter_map.items():
             stats.records += 1
-            segment_type = _BAHA_TYPES.get(str(raw_type).upper(), str(raw_type).casefold())
+            segment_type = _BAHA_TYPES.get(
+                str(raw_type).upper(), str(raw_type).casefold()
+            )
             valid = (
                 isinstance(raw_range, list)
                 and len(raw_range) == 2

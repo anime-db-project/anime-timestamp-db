@@ -12,7 +12,9 @@ from anime_timestamp_db.database import DatabaseWriter
 
 
 class ConsensusTests(unittest.TestCase):
-    def test_clusters_nearby_ranges_and_separates_different_media_durations(self) -> None:
+    def test_clusters_nearby_ranges_and_separates_different_media_durations(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             runtime = root / "runtime.db"

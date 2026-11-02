@@ -25,10 +25,14 @@ class DatabaseSchemaTests(unittest.TestCase):
             evidence_info = inspect_database(evidence)
             self.assertEqual(runtime_info["metadata"]["database_role"], "runtime")
             self.assertEqual(evidence_info["metadata"]["database_role"], "evidence")
-            self.assertEqual(runtime_info["metadata"]["schema_version"], str(SCHEMA_VERSION))
+            self.assertEqual(
+                runtime_info["metadata"]["schema_version"], str(SCHEMA_VERSION)
+            )
             self.assertEqual(runtime_info["counts"]["source_segments"], 0)
             with closing(sqlite3.connect(runtime)) as conn:
-                self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+                self.assertEqual(
+                    conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
+                )
 
     def test_invalid_ranges_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

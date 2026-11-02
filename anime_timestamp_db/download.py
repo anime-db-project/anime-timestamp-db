@@ -13,7 +13,9 @@ import httpx
 
 from anime_timestamp_db.config import SourceSpec
 
-USER_AGENT = "anime-timestamp-db/0.2 (+https://github.com/anime-db-project/anime-timestamp-db)"
+USER_AGENT = (
+    "anime-timestamp-db/0.2 (+https://github.com/anime-db-project/anime-timestamp-db)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +95,9 @@ def download_source(
                             path=payload_path,
                             source_url=spec.url,
                             final_url=str(old_meta.get("final_url") or spec.url),
-                            sha256=str(old_meta.get("sha256") or _sha256_file(payload_path)),
+                            sha256=str(
+                                old_meta.get("sha256") or _sha256_file(payload_path)
+                            ),
                             size_bytes=payload_path.stat().st_size,
                             retrieved_at=str(old_meta.get("retrieved_at") or ""),
                             etag=str(old_meta.get("etag") or ""),
