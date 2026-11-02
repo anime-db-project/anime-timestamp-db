@@ -246,7 +246,9 @@ def import_aniskip(
                 normalized_episode_key = episode_key if episode_id is not None else ""
             else:
                 normalization_status = "invalid"
-                normalization_reason = "missing MAL/episode/type or invalid timestamp range"
+                normalization_reason = (
+                    "missing MAL/episode/type or invalid timestamp range"
+                )
                 normalized_id = ""
                 normalized_episode_key = ""
                 stats.invalid += 1
