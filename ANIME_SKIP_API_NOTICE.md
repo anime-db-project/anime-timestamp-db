@@ -13,11 +13,12 @@ rehosted third-party timestamps. The API homepage advertises free application
 access, not necessarily unrestricted bulk redistribution. AniSkip's sanitized
 public CSV release likewise does not independently license all live API data.
 
-The operator must independently verify applicable data licensing, attribution
-and bulk redistribution permission **for each upstream** before enabling
-release imports with `--api-checkpoint-dir` and
-`--allow-api-redistribution`. No upstream dataset is labelled ODbL, MIT,
-Apache or GPL solely from the upstream software license.
+The repository maintainer has opted into automatic release imports when both
+validated source checkpoints exist and remains responsible for applicable
+data licensing, attribution and redistribution permissions **for each
+upstream**. This setting is not an independent upstream license grant.
+No upstream dataset is labelled ODbL, MIT, Apache or GPL solely from the
+upstream software license.
 
 ### Preservation and normalization
 

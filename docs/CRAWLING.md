@@ -22,8 +22,9 @@ provenance, duplicate suppression and optional audited release imports.
    `checkpoints/<source>.json.gz`. GitHub Actions Cache is merely a
    performance fallback, and Actions Artifacts are recovery/debug outputs.
    State branches provide version history and survive cache eviction.
-6. Optionally rebuild runtime and evidence databases from those checkpoints
-   **only after operator confirmation of the providers' redistribution rights**.
+6. Automatically import both checkpoint snapshots into runtime and evidence
+   databases when they are complete and valid. The maintainer has opted in
+   to publication, subject to applicable upstream terms.
 
 The durable state branches are **PUBLIC when this repository is public**.
 Their content is source-derived data. Confirm the provider terms and
@@ -129,18 +130,18 @@ collected before the durable-store upgrade.
   included in `manifest.json`. Changes are included in release fingerprint
   comparisons, so unchanged snapshots do not alone trigger new releases.
 
-## Release integration: explicitly gated
+## Release integration: automatic once both sources are ready
 
-API observations are now supported by the builder but **not implicitly
-distributed**. The provider's software license is not necessarily a grant to
-republish the crowdsourced database. Verify source-specific terms/permission
-before turning on publication.
+The maintainer has enabled automatic API-data imports in both Database build
+and Release workflows. The workflows check and validate the source-specific
+checkpoints. When **both** exist, they are compiled into the SQLite databases.
+If neither or only one source checkpoint exists, the workflow records which
+sources are pending and builds from the other datasets without API imports.
+Corrupted existing checkpoints are fatal instead of silently discarded.
 
-After permission is confirmed, set the repository **Actions variable**
-`ENABLE_API_CRAWL_IMPORT` to `true` (Settings → Secrets and variables →
-Actions → Variables), not a secret. Both the Database build workflow and
-the Release workflow will then restore both authoritative checkpoints,
-validate their presence and call:
+No `ENABLE_API_CRAWL_IMPORT` Actions variable is required. The builder still
+requires the explicit redistribution flag, supplied automatically only once
+both checkpoints are validated:
 
 ```sh
 anime-timestamp-db build --output-dir artifacts \
@@ -158,8 +159,8 @@ The following remain distinct:
 
 - `crawler-state-*` branches: durable checkpoint and recovery history;
 - short-lived Actions artifacts: audit/debugging and offline exports;
-- `timestamps.db` and `timestamps-evidence.db`: optional compiled
-  distribution under the explicit release permission gate.
+- `timestamps.db` and `timestamps-evidence.db`: automatic all-source API
+  import after both durable checkpoints are ready; no partial imports.
 
 ## CLI and offline verification
 

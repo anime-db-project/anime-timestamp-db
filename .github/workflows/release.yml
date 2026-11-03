@@ -30,8 +30,6 @@ concurrency:
 jobs:
   build-release:
     runs-on: ubuntu-latest
-    env:
-      API_IMPORT_APPROVED: ${{ vars.ENABLE_API_CRAWL_IMPORT || 'false' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
@@ -79,22 +77,24 @@ jobs:
         if: steps.existing_release.outputs.exists != 'true'
         run: python -m unittest discover -s tests -v
 
-      - name: Restore authorized API snapshots for release
-        if: steps.existing_release.outputs.exists != 'true' && env.API_IMPORT_APPROVED == 'true'
+      - name: Prepare automatic API checkpoint import
+        id: api_import
+        if: steps.existing_release.outputs.exists != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          for source in aniskip anime_skip; do
-            python scripts/checkpoint_store.py restore --source "$source" --state-dir api-checkpoints
-            test -s "api-checkpoints/$source.json.gz"
-          done
+        run: >-
+          python -m scripts.api_import_prepare
+          --output-dir api-checkpoints
+          --github-output "$GITHUB_OUTPUT"
 
       - name: Build real-data databases
         if: steps.existing_release.outputs.exists != 'true'
         shell: bash
+        env:
+          API_IMPORT_READY: ${{ steps.api_import.outputs.enabled }}
         run: |
           flags=()
-          if [[ "$API_IMPORT_APPROVED" == "true" ]]; then
+          if [[ "$API_IMPORT_READY" == "true" ]]; then
             flags+=(--api-checkpoint-dir api-checkpoints --allow-api-redistribution)
           fi
           anime-timestamp-db build \

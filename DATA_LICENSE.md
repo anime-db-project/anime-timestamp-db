@@ -59,11 +59,11 @@ and the server project's open-source software license do **not** automatically
 establish independent rights to redistribute the underlying crowdsourced data.
 Anime Skip also mirrors other upstream data such as BetterVRV.
 
-The build therefore requires both a checkpoint directory and the explicit
-`--allow-api-redistribution` operator gate. The default GitHub release
-workflow leaves the import disabled unless the repository maintainer sets
-`ENABLE_API_CRAWL_IMPORT=true` after verifying redistribution rights for
-both APIs. Every enabled build includes `ANIME_SKIP_API_NOTICE.md`, exact
+The maintainer has enabled automatic imports once **both** valid API
+checkpoints are available. Build and release workflows pass the required
+`--allow-api-redistribution` flag together with the checkpoint directory
+only in that case; incomplete sources do not create a partial API-data
+release. Every enabled build includes `ANIME_SKIP_API_NOTICE.md`, exact
 checkpoint checksums, source-native identifiers, and lineage preservation.
 Unknown/ambiguous episode matches remain source-addressable.
 
