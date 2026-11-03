@@ -91,7 +91,9 @@ class CrawlerTests(unittest.TestCase):
 
         with (
             mock.patch.object(crawl, "mapping_database_metadata"),
-            mock.patch.object(crawl.sqlite3, "connect", return_value=LegacyConnection()),
+            mock.patch.object(
+                crawl.sqlite3, "connect", return_value=LegacyConnection()
+            ),
         ):
             catalog, stats = crawl.load_catalog(self.mapping)
         self.assertNotIn("mal", catalog[101])
@@ -607,12 +609,18 @@ class CrawlerTests(unittest.TestCase):
                     "segments": [
                         valid,
                         {**valid, "episode": 2, "source_segment_id": "wrong-ep"},
-                        {**valid, "native_title_id": "21", "source_segment_id": "foreign"},
+                        {
+                            **valid,
+                            "native_title_id": "21",
+                            "source_segment_id": "foreign",
+                        },
                     ],
                 },
                 "21:1": {
                     "status": "missing",
-                    "segments": [{**valid, "native_title_id": "21", "source_segment_id": "stale"}],
+                    "segments": [
+                        {**valid, "native_title_id": "21", "source_segment_id": "stale"}
+                    ],
                 },
                 "5114:bad": {
                     "status": "found",
