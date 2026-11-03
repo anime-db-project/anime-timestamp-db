@@ -1,0 +1,44 @@
+name: Cleanup remaining branches once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-remaining-branches-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Delete remaining stale branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branches=(
+            "chore/tagged-releases-source-archives"
+            "fix/restore-release-source-archives"
+            "hardening/source-release-contract"
+            "oat-integration-temp2"
+            "oat-integration-temp3"
+            "refactor/anchor-runtime-v5"
+          )
+          for branch in "${branches[@]}"; do
+            if gh api "/repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
+              echo "Deleting $branch"
+              gh api --method DELETE "/repos/$GITHUB_REPOSITORY/git/refs/heads/$branch"
+            fi
+          done
+      - name: Remove one-time workflow
+        run: |
+          git rm .github/workflows/cleanup-remaining-branches-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove completed remaining-branch cleanup"
+          git push origin HEAD:main
