@@ -67,17 +67,3 @@ jobs:
         run: |
           coverage run -m unittest discover -s tests -v
           coverage report --fail-under=70
-      - name: Source release packaging smoke
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-          rm -rf /tmp/atdb-source-smoke
-          mkdir -p /tmp/atdb-source-smoke
-          python -m anime_timestamp_db.source_archives \
-            --project anime-timestamp-db \
-            --tag ci-smoke \
-            --commit "$GITHUB_SHA" \
-            --output-dir /tmp/atdb-source-smoke \
-            --checksums /tmp/atdb-source-smoke/SHA256SUMS
-          cd /tmp/atdb-source-smoke
-          sha256sum --check SHA256SUMS

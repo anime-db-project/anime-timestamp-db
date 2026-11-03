@@ -88,18 +88,6 @@ jobs:
             > artifacts/audit.json
           cat artifacts/audit.json
 
-      - name: Package project source archives
-        if: steps.existing.outputs.exists != 'true'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-          python -m anime_timestamp_db.source_archives \
-            --project anime-timestamp-db \
-            --tag "${{ steps.meta.outputs.tag }}" \
-            --commit "$GITHUB_SHA" \
-            --output-dir artifacts \
-            --checksums artifacts/SHA256SUMS
 
       - name: Verify release checksums
         if: steps.existing.outputs.exists != 'true'
@@ -117,7 +105,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
-            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published as release assets. Project source is additionally published as checksum-covered ZIP, TAR.ZST and 7Z assets (prefixed zz- so they stay after database assets)."
+            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published as release assets. GitHub provides the repository Source code (zip) and Source code (tar.gz) archives automatically; this project does not upload duplicate source bundles."
 
       - name: Existing release
         if: steps.existing.outputs.exists == 'true'
