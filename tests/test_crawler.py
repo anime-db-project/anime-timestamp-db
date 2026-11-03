@@ -187,6 +187,10 @@ class CrawlerTests(unittest.TestCase):
         path = self.root / "state" / "aniskip.json.gz"
         crawl.write_gzip_json(path, {"version": 1, "source": "aniskip", "records": {}})
         self.assertEqual(crawl.load_state(path, "aniskip")["records"], {})
+        initial = path.read_bytes()
+        crawl.write_gzip_json(path, {"records": {}, "source": "aniskip", "version": 1})
+        self.assertEqual(path.read_bytes(), initial)
+        self.assertEqual(initial[4:8], bytes(4))
         old = (crawl.now() - timedelta(days=16)).isoformat()
         record = {"checked_at": old, "status": "missing", "segments": []}
         self.assertTrue(crawl.due(record, positive_days=30, negative_days=14))

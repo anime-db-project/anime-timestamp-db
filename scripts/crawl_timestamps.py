@@ -380,10 +380,17 @@ def write_gzip_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_name(path.name + ".part")
     try:
-        with gzip.open(part, "wt", encoding="utf-8", compresslevel=6) as handle:
-            json.dump(
-                data, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-            )
+        # Deterministic gzip: no current-time header and no temporary path.
+        # Identical checkpoint data must not cause a new branch commit or a
+        # new release solely because of gzip metadata.
+        payload = json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        with part.open("wb") as handle:
+            with gzip.GzipFile(
+                fileobj=handle, mode="wb", filename="", mtime=0, compresslevel=6
+            ) as compressed:
+                compressed.write(payload)
         os.replace(part, path)
     finally:
         part.unlink(missing_ok=True)
