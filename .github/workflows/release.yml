@@ -1,25 +1,34 @@
-name: Tagged database release
+name: Build timestamp release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: Release tag to create (for example v0.4.0)
-        required: true
-        type: string
+      force_release:
+        description: Publish even when upstream source fingerprints are unchanged
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "37 3 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "anime_timestamp_db/**"
+      - "pyproject.toml"
+      - ".github/workflows/release.yml"
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: timestamp-db-release
+  group: anime-timestamp-db-release
   cancel-in-progress: false
 
 jobs:
-  release:
+  build-release:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -30,57 +39,53 @@ jobs:
       - name: Choose release tag
         id: meta
         shell: bash
-        env:
-          INPUT_TAG: ${{ inputs.release_tag }}
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             tag="$GITHUB_REF_NAME"
           else
-            tag="$INPUT_TAG"
-          fi
-          if [[ -z "$tag" ]]; then
-            echo "release tag is required" >&2
-            exit 1
+            tag="v$(date -u +%Y.%m.%d).${GITHUB_RUN_NUMBER}"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Skip an existing release
-        id: existing
+      - name: Check whether tagged release already exists
+        id: existing_release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view "${{ steps.meta.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $GITHUB_REF_NAME already exists; skipping rebuild and publication."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v7
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
 
       - name: Unit tests
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         run: python -m unittest discover -s tests -v
 
       - name: Build real-data databases
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         run: |
           anime-timestamp-db build \
             --output-dir artifacts \
             --cache-dir .build-cache/timestamp-sources
 
       - name: Audit generated databases
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         run: |
           anime-timestamp-db audit \
             --db artifacts/timestamps.db \
@@ -88,13 +93,71 @@ jobs:
             > artifacts/audit.json
           cat artifacts/audit.json
 
+      - name: Compare with latest published source fingerprint
+        id: compare
+        if: steps.existing_release.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          FORCE_RELEASE: ${{ inputs.force_release }}
+        shell: bash
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir previous-release >/dev/null 2>&1 || true
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          def fingerprint(manifest: dict) -> str:
+              sources = {
+                  key: {
+                      "sha256": value.get("sha256", ""),
+                      "size_bytes": value.get("size_bytes", 0),
+                  }
+                  for key, value in sorted(manifest.get("sources", {}).items())
+              }
+              identity = manifest.get("identity", {})
+              payload = {
+                  "schema_version": manifest.get("schema_version"),
+                  "build_format_version": manifest.get("build_format_version"),
+                  "sources": sources,
+                  "identity": {
+                      "namespace": identity.get("namespace", ""),
+                      "mapping_database_sha256": identity.get("mapping_database_sha256", ""),
+                      "mapping_database_schema_version": identity.get("mapping_database_schema_version", ""),
+                      "anchor_schema_version": identity.get("anchor_schema_version", ""),
+                  },
+              }
+              packed = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+              return hashlib.sha256(packed).hexdigest()
+
+          current = json.loads(Path("artifacts/manifest.json").read_text())
+          previous_path = Path("previous-release/manifest.json")
+          previous = json.loads(previous_path.read_text()) if previous_path.is_file() else None
+          current_fp = fingerprint(current)
+          previous_fp = fingerprint(previous) if previous else ""
+          explicit_tag = os.environ.get("REF_TYPE") == "tag"
+          engine_push = (
+              os.environ.get("EVENT_NAME") == "push"
+              and os.environ.get("REF_TYPE") == "branch"
+          )
+          force = os.environ.get("FORCE_RELEASE", "").casefold() == "true"
+          changed = current_fp != previous_fp
+          publish = explicit_tag or engine_push or force or changed or previous is None
+          print(f"current_fingerprint={current_fp}")
+          print(f"previous_fingerprint={previous_fp}")
+          print(f"changed={'true' if changed else 'false'}")
+          print(f"publish={'true' if publish else 'false'}")
+          PY
 
       - name: Verify release checksums
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true'
         run: cd artifacts && sha256sum --check SHA256SUMS
 
       - name: Publish database assets
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing_release.outputs.exists != 'true' && steps.compare.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -105,8 +168,12 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
-            --notes "Anime Timestamp DB release. Runtime/evidence databases, audit data and source notices are published as release assets. GitHub provides the repository Source code (zip) and Source code (tar.gz) archives automatically; this project does not upload duplicate source bundles."
+            --notes "Automated Anime Timestamp DB build with compact runtime/evidence SQLite assets, audit data and source notices. Stable title identities use the amdb:<anchor_id> namespace. GitHub provides the repository Source code (zip) and Source code (tar.gz) archives automatically; this project does not upload duplicate source bundles. See manifest.json for source hashes, schemas and counts."
 
-      - name: Existing release
-        if: steps.existing.outputs.exists == 'true'
-        run: echo "Release ${{ steps.meta.outputs.tag }} already exists; nothing was changed."
+      - name: No source changes
+        if: steps.existing_release.outputs.exists != 'true' && steps.compare.outputs.publish != 'true'
+        run: echo "Upstream source fingerprint is unchanged; release skipped."
+
+      - name: Existing tagged release
+        if: steps.existing_release.outputs.exists == 'true'
+        run: echo "Release $GITHUB_REF_NAME already exists; tag push is idempotent and no assets were rebuilt."
