@@ -640,7 +640,8 @@ async def crawl(
                 ).isoformat()
                 existing = records.get(key)
                 if not isinstance(existing, dict) or existing.get("status") not in (
-                    "found", "missing"
+                    "found",
+                    "missing",
                 ):
                     existing = {
                         "status": "source_error",
