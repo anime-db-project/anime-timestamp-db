@@ -5,9 +5,9 @@ on:
     inputs:
       max_requests:
         description: Maximum HTTP requests per source (1-5000)
-        type: number
+        type: string
         required: false
-        default: 500
+        default: "500"
   schedule:
     - cron: "23 5 * * *"
   push:
@@ -58,7 +58,7 @@ jobs:
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
-          if (( REQUEST_LIMIT < 1 || REQUEST_LIMIT > 5000 )); then
+          if [[ ! "$REQUEST_LIMIT" =~ ^[1-9][0-9]{0,3}$ ]] || (( REQUEST_LIMIT > 5000 )); then
             echo "max_requests must be between 1 and 5000" >&2
             exit 1
           fi
