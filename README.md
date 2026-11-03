@@ -181,13 +181,7 @@ Normal push, scheduled, and manual database builds use short-lived GitHub Action
 
 A successful database build uploads the runtime/evidence databases, compressed variants, manifest, audit, checksums, and source-specific license/notice files.
 
-Tagged/manual Releases additionally publish the exact tracked project source tree as three checksum-covered assets:
-
-- `zz-anime-timestamp-db-<tag>-source.zip`
-- `zz-anime-timestamp-db-<tag>-source.tar.zst`
-- `zz-anime-timestamp-db-<tag>-source.7z`
-
-The `zz-` prefix is only an asset-ordering convention so these source archives stay after the database assets. Every archive contains a normal `anime-timestamp-db-<tag>/` root directory, is built from the exact release commit with `git archive`, and has its SHA-256 appended to the same `SHA256SUMS` file as the database artifacts. GitHub's automatic `Source code (zip)` / `Source code (tar.gz)` entries remain separate.
+GitHub automatically provides **Source code (zip)** and **Source code (tar.gz)** for tagged Releases. The project intentionally does not upload duplicate custom source-code archives; `SHA256SUMS` covers the project-published database and notice assets only.
 
 ## Local build
 
