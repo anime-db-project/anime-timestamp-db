@@ -299,5 +299,124 @@ class CrawlerTests(unittest.TestCase):
         self.assertEqual(rows[0]["anchor_id"], 101)
 
 
+    def test_anime_skip_missing_backend_row_skips_title_and_resumes(self) -> None:
+        sent = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            external_id = json.loads(request.content)["variables"]["id"]
+            sent.append(external_id)
+            if external_id == "9253":
+                return httpx.Response(
+                    200,
+                    json={
+                        "errors": [{
+                            "message": "Row not found in id=00000000-0000-0000-0000-000000000000",
+                            "path": ["findShowsByExternalId", 2, "episodes", 1, "timestamps"],
+                        }],
+                        "data": {"findShowsByExternalId": [{"episodes": []}]},
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={"data": {"findShowsByExternalId": [{
+                    "episodes": [{
+                        "id": "episode", "number": 1, "baseDuration": 120,
+                        "timestamps": [
+                            {"id": "intro", "at": 10, "source": "ANIME_SKIP",
+                             "type": {"name": "Intro"}},
+                            {"id": "next", "at": 35, "source": "ANIME_SKIP",
+                             "type": {"name": "Transition"}},
+                        ],
+                    }],
+                }]}},
+            )
+
+        async def run() -> None:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                args = self.options("anime_skip", max_requests=2)
+                report, ok = await crawl.crawl(args, client=client)
+                self.assertTrue(ok)
+                self.assertEqual(report["attempted"], 2)
+                self.assertEqual(report["skipped_upstream_invalid"], 1)
+                self.assertEqual(report["found"], 1)
+                self.assertEqual(report["missing"], 0)
+                self.assertEqual(report["errors"], [])
+                self.assertEqual(report["warnings"][0]["candidate"], "9253")
+                second, ok = await crawl.crawl(args, client=client)
+                self.assertTrue(ok)
+                self.assertEqual(second["attempted"], 0)
+
+        asyncio.run(run())
+        self.assertEqual(sent, ["9253", "1055"])
+        state = crawl.load_state(self.root / "state" / "anime_skip.json.gz", "anime_skip")
+        self.assertEqual(state["records"]["9253"]["status"], "source_error")
+        self.assertEqual(state["records"]["9253"]["segments"], [])
+        self.assertEqual(
+            state["records"]["9253"]["last_error_code"], "upstream_broken_reference"
+        )
+        self.assertFalse(crawl.due(state["records"]["9253"], positive_days=30,
+                                   negative_days=14))
+        with gzip.open(self.root / "out" / "anime_skip.jsonl.gz", "rt") as handle:
+            rows = [json.loads(line) for line in handle]
+        self.assertTrue(rows)
+        self.assertTrue(all(row["native_title_id"] == "1055" for row in rows))
+
+    def test_anime_skip_existing_observations_survive_bad_recheck(self) -> None:
+        old_segments = [{
+            "source": "anime_skip", "native_title_id": "9253",
+            "episode": 1, "type": "opening", "start_ms": 1000,
+            "end_ms": 2000, "duration_ms": 120000,
+            "source_segment_id": "old", "upstream_lineage": "ANIME_SKIP",
+        }]
+        state_path = self.root / "state" / "anime_skip.json.gz"
+        crawl.write_gzip_json(state_path, {
+            "version": 1, "source": "anime_skip",
+            "records": {"9253": {
+                "status": "found",
+                "checked_at": (crawl.now() - timedelta(days=45)).isoformat(),
+                "segments": old_segments,
+            }},
+        })
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"errors": [{
+                "message": "Row not found in id=00000000-0000-0000-0000-000000000000",
+            }]})
+
+        async def run() -> None:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                report, ok = await crawl.crawl(
+                    self.options("anime_skip", max_requests=1), client=client
+                )
+                self.assertTrue(ok)
+                self.assertEqual(report["skipped_upstream_invalid"], 1)
+                self.assertEqual(report["observations"], 1)
+
+        asyncio.run(run())
+        record = crawl.load_state(state_path, "anime_skip")["records"]["9253"]
+        self.assertEqual(record["status"], "found")
+        self.assertEqual(record["segments"], old_segments)
+        self.assertFalse(crawl.due(record, positive_days=30, negative_days=14))
+
+    def test_anime_skip_other_graphql_errors_remain_fatal(self) -> None:
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, json={"errors": [{"message": "Permission denied"}]}
+            )
+
+        async def run() -> None:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                report, ok = await crawl.crawl(
+                    self.options("anime_skip", max_requests=2), client=client
+                )
+                self.assertFalse(ok)
+                self.assertEqual(report["attempted"], 0)
+                self.assertEqual(report["skipped_upstream_invalid"], 0)
+                self.assertEqual(report["errors"][0]["type"], "BadUpstreamResponse")
+                self.assertEqual(report["warnings"], [])
+
+        asyncio.run(run())
+
+
 if __name__ == "__main__":
     unittest.main()
