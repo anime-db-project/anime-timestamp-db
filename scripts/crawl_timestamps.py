@@ -173,6 +173,10 @@ class BadUpstreamResponse(Exception):
     pass
 
 
+class UpstreamBrokenReference(BadUpstreamResponse):
+    """A single Anime Skip title references missing backend rows."""
+
+
 class BudgetExhausted(Exception):
     pass
 
@@ -276,10 +280,19 @@ def parse_aniskip(
 
 
 def parse_anime_skip(payload: dict[str, Any], anilist_id: str) -> list[dict[str, Any]]:
-    if payload.get("errors"):
-        raise BadUpstreamResponse(
-            "GraphQL returned errors: " + str(payload["errors"])[:180]
-        )
+    errors = payload.get("errors")
+    if errors:
+        # Anime Skip can return partial GraphQL data when a referenced
+        # timestamp row has disappeared. Do not import incomplete title data.
+        if isinstance(errors, list) and all(
+            isinstance(error, dict)
+            and str(error.get("message") or "").startswith("Row not found in id=")
+            for error in errors
+        ):
+            raise UpstreamBrokenReference(
+                "Anime Skip referenced missing timestamp row(s)"
+            )
+        raise BadUpstreamResponse("GraphQL returned errors: " + str(errors)[:180])
     data = payload.get("data")
     shows = data.get("findShowsByExternalId") if isinstance(data, dict) else None
     if not isinstance(shows, list):
@@ -371,6 +384,12 @@ def write_gzip_json(path: Path, data: dict[str, Any]) -> None:
 def due(record: Any, *, positive_days: int, negative_days: int) -> bool:
     if not isinstance(record, dict):
         return True
+    try:
+        retry_at = datetime.fromisoformat(record["retry_after_at"])
+        if retry_at.tzinfo is not None and now() < retry_at:
+            return False
+    except (KeyError, TypeError, ValueError):
+        pass
     try:
         checked = datetime.fromisoformat(record["checked_at"])
         if checked.tzinfo is None:
@@ -537,6 +556,8 @@ async def crawl(
         "attempted": 0,
         "found": 0,
         "missing": 0,
+        "skipped_upstream_invalid": 0,
+        "warnings": [],
         "errors": [],
         "dry_run": args.dry_run,
     }
@@ -608,6 +629,37 @@ async def crawl(
                     "segments": segments,
                 }
                 report["found" if segments else "missing"] += 1
+                report["attempted"] += 1
+            except UpstreamBrokenReference as error:
+                # Keep valid previously collected segments if this is a recheck.
+                # An API-side broken reference is not a missing title and must
+                # not stop independent title lookups.
+                checked_at = utc_string()
+                retry_after_at = (
+                    now() + timedelta(days=args.negative_ttl_days)
+                ).isoformat()
+                existing = records.get(key)
+                if not isinstance(existing, dict) or existing.get("status") not in (
+                    "found", "missing"
+                ):
+                    existing = {
+                        "status": "source_error",
+                        "checked_at": checked_at,
+                        "segments": [],
+                    }
+                existing["retry_after_at"] = retry_after_at
+                existing["last_error_at"] = checked_at
+                existing["last_error_code"] = "upstream_broken_reference"
+                records[key] = existing
+                report["skipped_upstream_invalid"] += 1
+                if len(report["warnings"]) < 100:
+                    report["warnings"].append(
+                        {
+                            "candidate": key,
+                            "type": type(error).__name__,
+                            "message": str(error),
+                        }
+                    )
                 report["attempted"] += 1
             except BudgetExhausted:
                 break
