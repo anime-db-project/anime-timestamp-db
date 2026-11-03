@@ -148,9 +148,13 @@ jobs:
           from pathlib import Path
           report = json.loads(Path(f"crawler-output/{os.environ['SOURCE']}-report.json").read_text())
           print(f"### {report['source']} API crawl")
-          for k in ("rpm", "budget", "attempted", "found", "missing", "observations", "titles", "due_after_run"):
+          for k in ("rpm", "budget", "attempted", "found", "missing", "skipped_upstream_invalid", "observations", "titles", "due_after_run"):
               print(f"- {k}: {report.get(k)}")
           if report.get("errors"):
               print(f"- errors: {report['errors']}")
+          if report.get("warnings"):
+              print(f"- upstream warnings: {len(report['warnings'])} (first 5 shown)")
+              for item in report["warnings"][:5]:
+                  print(f"  - {item['candidate']}: {item['message']}")
           PY
           fi
