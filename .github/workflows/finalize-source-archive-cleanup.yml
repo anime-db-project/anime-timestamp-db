@@ -1,0 +1,48 @@
+name: Finalize source archive cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/finalize-source-archive-cleanup.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Repair README and remove this one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("README.md")
+          text = path.read_text()
+          old = '''Tagged/manual Releases additionally publish the exact tracked project source tree as three checksum-covered assets:
+
+          - `zz-anime-timestamp-db-<tag>-source.zip`
+          - `zz-anime-timestamp-db-<tag>-source.tar.zst`
+          - `zz-anime-timestamp-db-<tag>-source.7z`
+
+          The `zz-` prefix is only an asset-ordering convention so these source archives stay after the database assets. Every archive contains a normal `anime-timestamp-db-<tag>/` root directory, is built from the exact release commit with `git archive`, and has its SHA-256 appended to the same `SHA256SUMS` file as the database artifacts. GitHub's automatic `Source code (zip)` / `Source code (tar.gz)` entries remain separate.
+          '''
+          new = '''GitHub automatically provides **Source code (zip)** and **Source code (tar.gz)** for tagged Releases. The project intentionally does not upload duplicate custom source-code archives; `SHA256SUMS` covers the project-published database and notice assets only.
+          '''
+          if old not in text:
+              raise SystemExit("expected README source-archive block not found")
+          path.write_text(text.replace(old, new))
+          PY
+
+          git rm .github/workflows/finalize-source-archive-cleanup.yml
+          git add README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync README with built-in GitHub source archives"
+          git push origin HEAD:main
