@@ -21,3 +21,8 @@ htmlcov/
 artifacts/
 data/
 .build-cache/
+
+# Crawler runtime outputs and approved local API imports
+crawler-output/
+api-checkpoints/
+inputs/

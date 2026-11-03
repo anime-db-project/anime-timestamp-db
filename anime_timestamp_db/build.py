@@ -10,12 +10,15 @@ from typing import Any
 import zstandard as zstd
 
 from anime_timestamp_db.anibridge import AniBridgeIndex
+from anime_timestamp_db.api_importer import import_api_checkpoint
 from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.audit import audit_databases
 from anime_timestamp_db.config import (
     ANIBRIDGE,
     ANIME_MAPPING_DB,
     ANISKIP,
+    ANISKIP_API,
+    ANIME_SKIP_API,
     BAHA,
     OPEN_ANIME_TIMESTAMPS,
     SKIPDB,
@@ -46,7 +49,7 @@ from anime_timestamp_db.schema import (
 )
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 9
+BUILD_FORMAT_VERSION = 10
 
 
 def _sha256(path: Path) -> str:
@@ -98,6 +101,8 @@ def build_database(
     cache_dir: Path | None = None,
     force_download: bool = False,
     consensus_tolerance_ms: int = 5000,
+    api_checkpoint_dir: Path | None = None,
+    allow_api_redistribution: bool = False,
 ) -> dict[str, Any]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +110,33 @@ def build_database(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(UTC).isoformat()
+    if api_checkpoint_dir is not None and not allow_api_redistribution:
+        raise ValueError(
+            "API data redistribution has not been authorized: explicitly "
+            "provide --allow-api-redistribution after verifying source terms"
+        )
+    api_sources = (("aniskip", ANISKIP_API), ("anime_skip", ANIME_SKIP_API))
+    api_downloads: dict[str, DownloadedSource] = {}
+    if api_checkpoint_dir is not None:
+        directory = Path(api_checkpoint_dir)
+        for source, spec in api_sources:
+            path = directory / f"{source}.json.gz"
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"API release import requested but checkpoint missing: {path}"
+                )
+            api_downloads[source] = DownloadedSource(
+                key=spec.key,
+                path=path,
+                source_url=spec.url,
+                final_url=spec.url,
+                sha256=_sha256(path),
+                size_bytes=path.stat().st_size,
+                retrieved_at=generated_at,
+                etag="",
+                last_modified="",
+                from_cache=False,
+            )
     specs = (
         ANIBRIDGE,
         ANIME_MAPPING_DB,
@@ -132,6 +164,10 @@ def build_database(
         DatabaseWriter(runtime_path, evidence_path, overwrite=True) as writer,
     ):
         writer.set_metadata("generated_at", generated_at)
+        writer.set_metadata("api_sources_enabled", bool(api_downloads))
+        writer.set_metadata(
+            "api_redistribution_operator_authorized", bool(api_downloads)
+        )
         writer.set_metadata("build_format_version", BUILD_FORMAT_VERSION)
         writer.set_metadata("consensus_algorithm", "weighted-median-v1")
         writer.set_metadata("consensus_tolerance_ms", consensus_tolerance_ms)
@@ -255,6 +291,33 @@ def build_database(
             snapshot_id=baha_snapshot,
         )
 
+        api_stats: dict[str, dict[str, object]] = {}
+        for source, spec in api_sources:
+            if source not in api_downloads:
+                continue
+            download = api_downloads[source]
+            snapshot_id = writer.add_snapshot(
+                spec,
+                download,
+                metadata={
+                    "role": "opt-in-live-api-checkpoint",
+                    "checkpoint_schema_version": 1,
+                    "source_native_title_id": (
+                        "mal" if source == "aniskip" else "anilist"
+                    ),
+                    "operator_authorized_redistribution": True,
+                    "explicit_upstream_dataset_license_found": False,
+                    "independent_episode_mapping_required": source == "anime_skip",
+                },
+            )
+            api_stats[spec.key] = import_api_checkpoint(
+                download.path,
+                source=source,
+                writer=writer,
+                snapshot_id=snapshot_id,
+                identities=identities,
+            ).as_dict()
+
         normalization_stats = merge_movie_episode_aliases(writer.conn)
         with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
             episode_index_stats = rebuild_episode_ids(
@@ -317,6 +380,8 @@ def build_database(
             "MAPPING_DB_THIRD_PARTY_NOTICES.md",
         ),
     )
+    if api_downloads:
+        notices += (("ANIME_SKIP_API_NOTICE.md", None),)
     for name, output_name in notices:
         _copy_notice(name, output_dir, output_name=output_name)
 
@@ -348,11 +413,17 @@ def build_database(
             for spec in specs
         },
         "imports": {
+            **api_stats,
             "aniskip": aniskip_stats.as_dict(),
             "skipdb": skip_stats.as_dict(),
             "open-anime-timestamps": oat_stats.as_dict(),
             "baha": baha_stats.as_dict(),
             "anibridge_mapping_entries": bridge_entry_count,
+        },
+        "api_crawler": {
+            "enabled": bool(api_downloads),
+            "operator_authorized_redistribution": bool(api_downloads),
+            "sources": list(api_downloads),
         },
         "normalization": normalization_stats.as_dict(),
         "episode_index": episode_index_stats.as_dict(),
@@ -369,6 +440,18 @@ def build_database(
         },
         "artifacts": {},
     }
+
+    for source, spec in api_sources:
+        if source not in api_downloads:
+            continue
+        manifest["sources"][spec.key] = {
+            **_download_manifest(api_downloads[source]),
+            "display_name": spec.display_name,
+            "homepage_url": spec.homepage_url,
+            "source_kind": spec.source_kind,
+            "license_note": spec.license_note,
+            "explicit_redistribution_license": False,
+        }
 
     for path in (runtime_path, runtime_zst, evidence_path, evidence_zst):
         manifest["artifacts"][path.name] = {

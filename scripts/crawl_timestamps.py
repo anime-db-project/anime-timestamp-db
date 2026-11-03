@@ -304,11 +304,15 @@ def parse_anime_skip(payload: dict[str, Any], anilist_id: str) -> list[dict[str,
         for ep in show.get("episodes") or []:
             if not isinstance(ep, dict):
                 continue
-            episode = positive_int(ep.get("absoluteNumber")) or positive_int(
-                ep.get("number")
-            )
+            absolute_number = positive_int(ep.get("absoluteNumber"))
+            season = positive_int(ep.get("season"))
+            season_number = positive_int(ep.get("number"))
+            episode = absolute_number or season_number
             if episode is None:
                 continue
+            # "number" can repeat in multiple seasons. Only a stable absolute
+            # number or an explicit first-season number may be normalized.
+            identity_proven = absolute_number is not None or season == 1
             duration = as_ms(ep.get("baseDuration"))
             grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for point in ep.get("timestamps") or []:
@@ -348,6 +352,10 @@ def parse_anime_skip(payload: dict[str, Any], anilist_id: str) -> list[dict[str,
                             "source_segment_id": point["id"],
                             "upstream_lineage": raw_source,
                             "upstream_episode_id": str(ep.get("id") or ""),
+                            "season": season,
+                            "absolute_number": absolute_number,
+                            "season_episode_number": season_number,
+                            "episode_identity_proven": identity_proven,
                         }
                     )
     return observations
@@ -515,7 +523,25 @@ async def crawl(
                 f"AMDB anchor {only_anchor} is not in the MAL/AniList catalog"
             )
         catalog = {only_anchor: catalog[only_anchor]}
+    state_path = args.state_dir / f"{source}.json.gz"
+    state = load_state(state_path, source)
+    records: dict[str, Any] = state["records"]
     hints = mal_episode_hints(args.timestamps_db) if source == "aniskip" else {}
+    if source == "aniskip":
+        # Existing API observations are also confirmed positive episode hints.
+        # Without this, titles without a static episode index never advance
+        # beyond the initial 1-2 episode discovery probe.
+        by_mal = {ids["mal"]: anchor for anchor, ids in catalog.items() if "mal" in ids}
+        for record in records.values():
+            if not isinstance(record, dict) or record.get("status") != "found":
+                continue
+            for segment in record.get("segments", []):
+                if not isinstance(segment, dict):
+                    continue
+                anchor = by_mal.get(str(segment.get("native_title_id")))
+                episode = positive_int(segment.get("episode"))
+                if anchor is not None and episode is not None:
+                    hints.setdefault(anchor, set()).add(episode)
     all_candidates = candidates(
         source,
         catalog,
@@ -523,9 +549,6 @@ async def crawl(
         unknown_episodes=args.unknown_episodes,
         max_episodes=args.max_episodes,
     )
-    state_path = args.state_dir / f"{source}.json.gz"
-    state = load_state(state_path, source)
-    records: dict[str, Any] = state["records"]
     pending = [
         item
         for item in all_candidates
@@ -551,6 +574,9 @@ async def crawl(
         "catalog": catalog_stats,
         "candidate_count": len(all_candidates),
         "due_before_run": len(pending),
+        "initial_unchecked_before_run": sum(
+            item[0] not in records for item in all_candidates
+        ),
         "rpm": args.rpm,
         "budget": args.max_requests,
         "attempted": 0,
@@ -561,6 +587,18 @@ async def crawl(
         "errors": [],
         "dry_run": args.dry_run,
     }
+    if getattr(args, "export_only", False):
+        output = args.output_dir / f"{source}.jsonl.gz"
+        report.update(export_snapshot(source, state, catalog, output))
+        report["initial_unchecked_after_run"] = report["initial_unchecked_before_run"]
+        report["remaining_budget"] = args.max_requests
+        report["due_after_run"] = len(pending)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        (args.output_dir / f"{source}-report.json").write_text(
+            json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return report, True
     if args.dry_run:
         report["preview_candidates"] = [
             {"anchor_id": anchor, "native_title_id": native, "episode": ep}
@@ -683,6 +721,28 @@ async def crawl(
         output = args.output_dir / f"{source}.jsonl.gz"
         report.update(export_snapshot(source, state, catalog, output))
         report["remaining_budget"] = remaining[0]
+        if source == "aniskip":
+            for record in records.values():
+                if not isinstance(record, dict) or record.get("status") != "found":
+                    continue
+                for segment in record.get("segments", []):
+                    if not isinstance(segment, dict):
+                        continue
+                    anchor = by_mal.get(str(segment.get("native_title_id")))
+                    episode = positive_int(segment.get("episode"))
+                    if anchor is not None and episode is not None:
+                        hints.setdefault(anchor, set()).add(episode)
+            all_candidates = candidates(
+                source,
+                catalog,
+                hints,
+                unknown_episodes=args.unknown_episodes,
+                max_episodes=args.max_episodes,
+            )
+        report["candidate_count_after_run"] = len(all_candidates)
+        report["initial_unchecked_after_run"] = sum(
+            item[0] not in records for item in all_candidates
+        )
         report["due_after_run"] = sum(
             due(
                 records.get(item[0]),
@@ -709,7 +769,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output-dir", type=Path, default=Path("crawler-output"))
     parser.add_argument("--rpm", type=int, default=DEFAULT_RPM)
-    parser.add_argument("--max-requests", type=int, default=500)
+    parser.add_argument("--max-requests", type=int, default=1000)
+    parser.add_argument(
+        "--export-only",
+        action="store_true",
+        help="Export a validated existing checkpoint without network requests",
+    )
     parser.add_argument(
         "--only-anchor",
         type=int,

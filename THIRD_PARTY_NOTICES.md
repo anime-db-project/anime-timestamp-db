@@ -58,3 +58,17 @@ Used as an AniDB-native timestamp source and aggregator. Regular AniDB episodes 
 The repository currently declares no explicit repository or standalone data license. The project is therefore listed and attributed without assigning it an invented license; see `OPEN_ANIME_TIMESTAMPS_NOTICE.md`. Exact source URL/hash/retrieval provenance is recorded in every build.
 
 Open Anime Timestamps records can report `open_anime_timestamps`, `chapter_data`, `aniskip`, `anime_skip`, `better_vrv`, or combinations. Single-source records retain that lineage. Multi-source records use a non-voting aggregate lineage because the upstream format does not identify which individual field came from which contributor.
+
+
+## Optional live AniSkip and Anime Skip API observations
+
+Sources:
+- AniSkip API: https://api.aniskip.com/api-docs
+- Anime Skip API: https://anime-skip.com/
+- Anime Skip API source: https://github.com/anime-skip/public-api
+
+The live API checkpoints are optional, disabled by default for database
+publication, and covered by `ANIME_SKIP_API_NOTICE.md`. The software code
+licenses of the API repositories must not be confused with data licenses.
+Source-native time ranges, checked-at evidence, and actual upstream lineage
+are preserved; mirror observations do not create new consensus voters.

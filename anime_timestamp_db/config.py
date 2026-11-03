@@ -27,6 +27,40 @@ ANISKIP = SourceSpec(
     explicit_redistribution_license=False,
 )
 
+ANISKIP_API = SourceSpec(
+    key="aniskip-api",
+    display_name="AniSkip Live API",
+    url=(
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/"
+        "crawler-state-aniskip/checkpoints/aniskip.json.gz"
+    ),
+    homepage_url="https://api.aniskip.com/api-docs",
+    source_kind="timestamp",
+    license_note=(
+        "Live AniSkip API data. No independent explicit bulk redistribution "
+        "grant confirmed; release inclusion requires operator approval."
+    ),
+    explicit_redistribution_license=False,
+)
+
+ANIME_SKIP_API = SourceSpec(
+    key="anime-skip-api",
+    display_name="Anime Skip Live API",
+    url=(
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/"
+        "crawler-state-anime_skip/checkpoints/anime_skip.json.gz"
+    ),
+    homepage_url="https://anime-skip.com/",
+    source_kind="timestamp",
+    license_note=(
+        "Anime Skip API and mirrored upstream lineages. Open-source API code "
+        "license is not an independent grant for data redistribution. "
+        "Release inclusion requires operator approval."
+    ),
+    explicit_redistribution_license=False,
+)
+
+
 SKIPDB = SourceSpec(
     key="skipdb",
     display_name="SkipDB",

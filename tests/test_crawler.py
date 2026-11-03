@@ -224,7 +224,7 @@ class CrawlerTests(unittest.TestCase):
             async with httpx.AsyncClient(
                 transport=httpx.MockTransport(handler)
             ) as client:
-                opts = self.options("aniskip", max_requests=3)
+                opts = self.options("aniskip", max_requests=3, max_episodes=1)
                 first, okay = await crawl.crawl(opts, client=client)
                 self.assertTrue(okay)
                 self.assertEqual(first["attempted"], 3)
@@ -471,6 +471,128 @@ class CrawlerTests(unittest.TestCase):
                 self.assertEqual(report["warnings"], [])
 
         asyncio.run(run())
+
+    def test_aniskip_positive_discovery_expands_episode_frontier(self) -> None:
+        episodes = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            episode = int(request.url.path.split("/")[-1])
+            episodes.append(episode)
+            return httpx.Response(
+                200,
+                json={
+                    "found": True,
+                    "results": [
+                        {
+                            "skipId": f"skip-{episode}",
+                            "skipType": "op",
+                            "interval": {"startTime": 10, "endTime": 100},
+                        }
+                    ],
+                },
+            )
+
+        async def run() -> None:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                opts = self.options(
+                    "aniskip",
+                    only_anchor=101,
+                    unknown_episodes=1,
+                    max_episodes=5,
+                    max_requests=1,
+                )
+                for _ in range(3):
+                    report, ok = await crawl.crawl(opts, client=client)
+                    self.assertTrue(ok)
+                    self.assertEqual(report["attempted"], 1)
+                    self.assertGreater(report["initial_unchecked_after_run"], 0)
+
+        asyncio.run(run())
+        self.assertEqual(episodes, [1, 2, 3])
+
+    def test_anime_skip_season_number_is_not_assumed_absolute(self) -> None:
+        response = {
+            "data": {
+                "findShowsByExternalId": [
+                    {
+                        "episodes": [
+                            {
+                                "id": "ep-season-2",
+                                "season": 2,
+                                "number": 1,
+                                "baseDuration": 1500,
+                                "timestamps": [
+                                    {
+                                        "id": "point",
+                                        "at": 1,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Intro"},
+                                    },
+                                    {
+                                        "id": "point2",
+                                        "at": 80,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Transition"},
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        result = crawl.parse_anime_skip(response, "9253")
+        self.assertEqual(result[0]["episode"], 1)
+        self.assertEqual(result[0]["season"], 2)
+        self.assertIsNone(result[0]["absolute_number"])
+        self.assertFalse(result[0]["episode_identity_proven"])
+        self.assertEqual(result[0]["upstream_episode_id"], "ep-season-2")
+
+    def test_export_only_has_no_network_effects(self) -> None:
+        state = {
+            "version": 1,
+            "source": "aniskip",
+            "records": {
+                "5114:1": {
+                    "status": "found",
+                    "checked_at": crawl.utc_string(),
+                    "segments": [
+                        {
+                            "source": "aniskip",
+                            "native_title_id": "5114",
+                            "episode": 1,
+                            "type": "opening",
+                            "start_ms": 0,
+                            "end_ms": 1000,
+                            "duration_ms": 1500000,
+                            "source_segment_id": "id",
+                            "upstream_lineage": "aniskip",
+                        }
+                    ],
+                },
+            },
+        }
+        crawl.write_gzip_json(self.root / "state" / "aniskip.json.gz", state)
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            raise AssertionError("No HTTP calls permitted in export-only mode")
+
+        async def run() -> None:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                opts = self.options("aniskip", export_only=True)
+                report, ok = await crawl.crawl(opts, client=client)
+                self.assertTrue(ok)
+                self.assertEqual(report["attempted"], 0)
+                self.assertEqual(report["observations"], 1)
+
+        asyncio.run(run())
+        with gzip.open(self.root / "out" / "aniskip.jsonl.gz", "rt") as file:
+            row = json.loads(file.readline())
+        self.assertEqual(row["anchor_id"], 101)
 
 
 if __name__ == "__main__":

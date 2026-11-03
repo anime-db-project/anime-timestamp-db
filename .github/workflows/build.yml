@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      API_IMPORT_APPROVED: ${{ vars.ENABLE_API_CRAWL_IMPORT || 'false' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -28,11 +30,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-      - name: Build real-data databases
+      - name: Restore authorized API snapshots for build
+        if: env.API_IMPORT_APPROVED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          for source in aniskip anime_skip; do
+            python scripts/checkpoint_store.py restore --source "$source" --state-dir api-checkpoints
+            test -s "api-checkpoints/$source.json.gz"
+          done
+
+      - name: Build real-data databases
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$API_IMPORT_APPROVED" == "true" ]]; then
+            flags+=(--api-checkpoint-dir api-checkpoints --allow-api-redistribution)
+          fi
           anime-timestamp-db build \
             --output-dir artifacts \
-            --cache-dir .build-cache/timestamp-sources
+            --cache-dir .build-cache/timestamp-sources \
+            "${flags[@]}"
       - name: Audit generated databases
         run: |
           anime-timestamp-db audit \
@@ -61,6 +79,7 @@ jobs:
             artifacts/SKIPDB_DATA_LICENSE.txt
             artifacts/BAHA_LICENSE.txt
             artifacts/ANIBRIDGE_LICENSE.txt
+            artifacts/ANIME_SKIP_API_NOTICE.md
             artifacts/MAPPING_DB_DATA_LICENSE.md
             artifacts/MAPPING_DB_THIRD_PARTY_NOTICES.md
           if-no-files-found: error

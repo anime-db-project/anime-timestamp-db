@@ -4,23 +4,37 @@ on:
   workflow_dispatch:
     inputs:
       max_requests:
-        description: Maximum HTTP requests per source (1-5000)
+        description: HTTP request budget per source per run (1-5000)
         type: string
         required: false
-        default: "500"
+        default: "1000"
+      mode:
+        description: Maintenance or one-time resumable full bootstrap
+        type: choice
+        options: [maintenance, bootstrap]
+        required: false
+        default: maintenance
+      remaining_runs:
+        description: Bootstrap safety bound including this run (1-160)
+        type: string
+        required: false
+        default: "160"
   schedule:
     - cron: "23 5 * * *"
   push:
     branches: [main]
     paths:
       - "scripts/crawl_timestamps.py"
+      - "scripts/checkpoint_store.py"
       - "tests/test_crawler.py"
+      - "tests/test_checkpoint_store.py"
       - ".github/workflows/crawl.yml"
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
-# A second run must not consume the same per-source API budget or overwrite state.
+# Never run two checkpoint writers for the same source at the same time.
 concurrency:
   group: anime-timestamp-db-api-crawl
   cancel-in-progress: false
@@ -37,7 +51,7 @@ jobs:
     env:
       ANIME_SKIP_CLIENT_ID: ${{ secrets.ANIME_SKIP_CLIENT_ID }}
       SOURCE: ${{ matrix.source }}
-      REQUEST_LIMIT: ${{ github.event_name == 'push' && '2' || inputs.max_requests || '500' }}
+      REQUEST_LIMIT: ${{ github.event_name == 'push' && '2' || inputs.max_requests || '1000' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +62,7 @@ jobs:
       - name: Install project
         run: python -m pip install -e .
 
-      - name: Check credentials and budget
+      - name: Check credentials and request budget
         id: preflight
         shell: bash
         run: |
@@ -59,11 +73,11 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
           if [[ ! "$REQUEST_LIMIT" =~ ^[1-9][0-9]{0,3}$ ]] || (( REQUEST_LIMIT > 5000 )); then
-            echo "max_requests must be between 1 and 5000" >&2
+            echo "max_requests must be an integer between 1 and 5000" >&2
             exit 1
           fi
 
-      - name: Restore independent crawler checkpoint
+      - name: Restore legacy Actions cache (migration fallback)
         if: steps.preflight.outputs.enabled == 'true'
         uses: actions/cache/restore@v4
         with:
@@ -71,6 +85,12 @@ jobs:
           key: timestamp-crawler-v1-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             timestamp-crawler-v1-${{ matrix.source }}-
+
+      - name: Restore durable source checkpoint (authoritative)
+        if: steps.preflight.outputs.enabled == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/checkpoint_store.py restore --source "$SOURCE"
 
       - name: Download read-only mapping reference
         if: steps.preflight.outputs.enabled == 'true'
@@ -95,7 +115,6 @@ jobs:
             https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/timestamps.db.zst
           python - <<'PY'
           from pathlib import Path
-          # Timestamp database has a different schema, but the compression is the same.
           import zstandard
           with Path("inputs/timestamps.db.zst").open("rb") as src, Path("inputs/timestamps.db").open("wb") as dst:
               zstandard.ZstdDecompressor().copy_stream(src, dst)
@@ -118,7 +137,19 @@ jobs:
             --rpm 70 \
             --max-requests "$REQUEST_LIMIT"
 
-      - name: Save updated checkpoint for next run
+      - name: Persist durable checkpoint (also after crawler failure)
+        if: always() && steps.preflight.outputs.enabled == 'true' && github.event_name != 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [[ -f ".build-cache/crawler-state/$SOURCE.json.gz" ]]; then
+            python scripts/checkpoint_store.py persist --source "$SOURCE"
+          else
+            echo "No checkpoint to persist."
+          fi
+
+      - name: Save cache for fast recovery
         if: always() && steps.preflight.outputs.enabled == 'true'
         uses: actions/cache/save@v4
         with:
@@ -135,7 +166,7 @@ jobs:
             crawler-output/${{ matrix.source }}-report.json
             .build-cache/crawler-state/${{ matrix.source }}.json.gz
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Add summary
         if: always() && steps.preflight.outputs.enabled == 'true'
@@ -148,13 +179,85 @@ jobs:
           from pathlib import Path
           report = json.loads(Path(f"crawler-output/{os.environ['SOURCE']}-report.json").read_text())
           print(f"### {report['source']} API crawl")
-          for k in ("rpm", "budget", "attempted", "found", "missing", "skipped_upstream_invalid", "observations", "titles", "due_after_run"):
+          for k in ("rpm", "budget", "attempted", "found", "missing", "skipped_upstream_invalid",
+                    "observations", "titles", "initial_unchecked_before_run",
+                    "initial_unchecked_after_run", "candidate_count_after_run", "due_after_run"):
               print(f"- {k}: {report.get(k)}")
           if report.get("errors"):
-              print(f"- errors: {report['errors']}")
+              print(f"- fatal errors: {report['errors']}")
           if report.get("warnings"):
               print(f"- upstream warnings: {len(report['warnings'])} (first 5 shown)")
               for item in report["warnings"][:5]:
                   print(f"  - {item['candidate']}: {item['message']}")
           PY
           fi
+
+  bootstrap-next:
+    name: Continue initial pass if needed
+    needs: crawl
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'bootstrap' &&
+      needs.crawl.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download source reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for source in aniskip anime_skip; do
+            mkdir -p "reports/$source"
+            gh run download "$GITHUB_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "timestamp-crawler-$source-$GITHUB_RUN_ID" \
+              --dir "reports/$source"
+          done
+
+      - name: Decide whether to continue safely
+        id: plan
+        env:
+          RUNS: ${{ inputs.remaining_runs }}
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+          reports = [
+              json.loads(Path(f"reports/{source}/crawler-output/{source}-report.json").read_text())
+              for source in ("aniskip", "anime_skip")
+          ]
+          remaining = int(os.environ["RUNS"])
+          if not 1 <= remaining <= 160:
+              raise SystemExit("remaining_runs must be an integer 1-160")
+          if any(r.get("errors") for r in reports):
+              raise SystemExit("Fatal API errors; bootstrap paused")
+          unfinished = {
+              r["source"]: r["initial_unchecked_after_run"]
+              for r in reports
+          }
+          print(f"unfinished={unfinished}", file=__import__("sys").stderr)
+          continue_run = any(unfinished.values()) and remaining > 1
+          print(f"continue={'true' if continue_run else 'false'}")
+          print(f"next_runs={remaining - 1}")
+          PY
+
+      - name: Dispatch next bounded bootstrap batch
+        if: steps.plan.outputs.continue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIMIT: ${{ inputs.max_requests }}
+          RUNS: ${{ steps.plan.outputs.next_runs }}
+        run: |
+          gh workflow run crawl.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --raw-field "mode=bootstrap" \
+            --raw-field "max_requests=${LIMIT:-1000}" \
+            --raw-field "remaining_runs=$RUNS"
+
+      - name: Record completion or safety stop
+        if: steps.plan.outputs.continue != 'true'
+        run: echo "Initial pass complete, or bootstrap safety bound reached. Daily maintenance remains enabled."

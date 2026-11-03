@@ -51,6 +51,26 @@ The upstream file is also an aggregator. Its record-level `sources` metadata is 
 
 If upstream publishes or changes licensing terms, subsequent builds and redistribution notices must be updated to comply with those terms.
 
+## Live AniSkip / Anime Skip API checkpoints
+
+Live API observations are optional and different from the default public
+AniSkip CSV and Open Anime Timestamps snapshot sources. The API's availability
+and the server project's open-source software license do **not** automatically
+establish independent rights to redistribute the underlying crowdsourced data.
+Anime Skip also mirrors other upstream data such as BetterVRV.
+
+The build therefore requires both a checkpoint directory and the explicit
+`--allow-api-redistribution` operator gate. The default GitHub release
+workflow leaves the import disabled unless the repository maintainer sets
+`ENABLE_API_CRAWL_IMPORT=true` after verifying redistribution rights for
+both APIs. Every enabled build includes `ANIME_SKIP_API_NOTICE.md`, exact
+checkpoint checksums, source-native identifiers, and lineage preservation.
+Unknown/ambiguous episode matches remain source-addressable.
+
+**Important:** the separate durable checkpoint branches contain live API
+data and are publicly readable if this repository is public; verify applicable
+terms before starting a long-term public bootstrap crawl.
+
 ## Build provenance
 
 Every build records source URLs, final redirected URLs, retrieval timestamps, hashes, byte sizes, ETag/Last-Modified values when available, source roles, and license notes in `manifest.json` and/or `timestamps-evidence.db`.

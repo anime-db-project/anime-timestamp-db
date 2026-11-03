@@ -1,116 +1,185 @@
-# Incremental API crawlers (AniSkip and Anime Skip)
+# API crawling, durable checkpoints and release integration
 
-This is the **first, collection-only stage** of API crawling. It does not modify
-published `timestamps.db`, `timestamps-evidence.db`, `mappings.db`, or automatic
-GitHub Releases. The output is an intermediate snapshot for validation, not an
-automatically redistributed dataset.
+This is the source-aware incremental ingestion pipeline for **AniSkip** and
+**Anime Skip**. It covers initial discovery, recovery, repeat checks, transparent
+provenance, duplicate suppression and optional audited release imports.
 
-## Sources and identity
+## Architecture
 
-| Source | Method | Identity | One request returns | Max RPM |
-| --- | --- | --- | --- | --- |
-| AniSkip | `GET https://api.aniskip.com/v2/skip-times/{mal}/{episode}` | Confirmed MAL ID from `mappings.db` | Skip intervals for an episode | **70** |
-| Anime Skip | `POST https://anime-skip.com/api/graphql` | Confirmed AniList ID from `mappings.db` | All known episodes and their boundary timestamps for a show | **70** |
+1. Download published `anime-mapping-db/mappings.db.zst` read-only and derive
+   all unambiguous MAL / AniList title identifiers. No fuzzy title matching.
+2. **AniSkip**: GET `https://api.aniskip.com/v2/skip-times/{mal}/{episode}`;
+   an independent per-source sliding window limits all calls/retries to **70 RPM**.
+3. **Anime Skip**: authenticated POST `https://anime-skip.com/api/graphql`;
+   one request can return multiple episodes and timestamp boundaries. Boundary
+   intervals are calculated within the **same upstream lineage**, never between
+   different third-party providers.
+4. Validate, normalize and checkpoint source-native observations. A new title,
+   missing title and bad upstream record get distinct persisted statuses.
+5. Store the entire source state, including original normalized intervals, in
+   the dedicated branches `crawler-state-aniskip` and
+   `crawler-state-anime_skip`, respectively, under
+   `checkpoints/<source>.json.gz`. GitHub Actions Cache is merely a
+   performance fallback, and Actions Artifacts are recovery/debug outputs.
+   State branches provide version history and survive cache eviction.
+6. Optionally rebuild runtime and evidence databases from those checkpoints
+   **only after operator confirmation of the providers' redistribution rights**.
 
-Both source jobs run independently and can execute concurrently. **Each
-source has one request worker**, and all of its HTTP calls (including retries)
-pass through a sliding one-minute limiter. A GitHub Actions concurrency group
-prevents concurrent executions of the entire crawler workflow.
+The durable state branches are **PUBLIC when this repository is public**.
+Their content is source-derived data. Confirm the provider terms and
+redistribution rights before starting a long-term public archive.
 
-The crawl is driven by **all unambiguous MAL/AniList identities from the
-published `anime-mapping-db`**. It never excludes an entire title because a
-timestamp from another source already exists. AniSkip episode candidates are
-derived from confirmed MAL episode keys in the existing `timestamps.db`; for
-titles with no known episode numbers, the default discovery probe is episodes
-1 and 2. For already known episodes, it also probes gaps and two prospective
-episodes (bounded by `--max-episodes`). This is deliberately **not** an
-authoritative episode-count discovery service: unseen episode 30 cannot be
-found from `mappings.db` alone.
+The crawler never puts Client IDs, tokens, account/user identifiers or
+secret headers into checkpoints. Native title identifiers, episode IDs,
+timestamp source IDs, timings, timestamps of checks and lineage are recorded.
 
-Anime Skip's points are **boundaries**, not ranges. We construct an interval
-using the next boundary from the **same upstream timestamp source**, or the
-known episode duration. The raw `upstream_lineage` field remains in the
-snapshot; third-party mirrored observations must not count as additional
-independent votes merely because the response came through Anime Skip.
+## First pass: bounded, resumable bootstrap
 
-## State is outside the databases
+`.github/workflows/crawl.yml` now supports:
 
-Files in `.build-cache/crawler-state/`:
+- `mode=bootstrap`: process previously unseen candidates first, up to
+  **1000 HTTP requests per source per job**. The next bounded run dispatches
+  automatically when both source jobs succeed and some candidates remain.
+- `remaining_runs=160` is the default **safety limit** on the number of
+  automatically chained workflow runs. This is not a single 160-hour runner.
+  A rate limit, fatal response, failed durable state save or job failure
+  **stops chaining**; an operator can dispatch bootstrap again to resume.
+- `mode=maintenance`: use the same persistent state to check newly added
+  titles, due negative checks, errors after cooldown and positive checks that
+  have expired. This is the default for manual and daily scheduled runs.
+- Both sources run as independent workers and have their own request budgets.
+  Workflow-level concurrency serializes all checkpoint writes and dispatches.
+- `push` only exercises **2 requests per source**, without publishing new
+  persistent checkpoints (CI smoke checks), not a full crawl.
+- The daily schedule is 05:23 UTC, using the standard 1000-request budget.
 
-- `aniskip.json.gz` — previous responses, including negative results and
-  timestamps of checks by MAL title + episode
-- `anime_skip.json.gz` — previous response observations by AniList title
+**Start an initial pass** from GitHub Actions → Timestamp API crawling →
+Run workflow, selecting `mode=bootstrap`, `max_requests=1000`,
+`remaining_runs=160`. The workflow will dispatch subsequent batches
+automatically, without manually starting 125 separate runs. Use the run
+summaries to watch `initial_unchecked_after_run`; completion means zero
+**known candidates**, not exhaustive coverage of every possible series in
+anime history.
 
-Files in `crawler-output/`:
+At the currently indexed volume (~124k AniSkip episode candidates and ~22k
+Anime Skip titles), a complete initial pass needs on the order of **125
+batches**, and at 70 RPM requires **at least ~30 hours** of combined crawl
+time plus workflow overhead. It can take longer with retries or slower APIs.
+An actual source rate limit (HTTP 403/429) stops the affected source safely
+rather than bypassing the provider.
 
-- `<source>.jsonl.gz` — normalized candidate observations; each row includes
-  source identity, stable `anchor_id`, episode, exact intervals, upstream
-  lineage, and segment ID
-- `<source>-report.json` — request counts, mapping SHA, errors, and coverage
+### A crucial episode-discovery limitation
 
-These are **not published SQLite tables**. API credentials are not written to
-checkpoints or output files. Checkpoints are written atomically, every 25
-completed requests and at exit, and restored by the dedicated Actions cache.
-The workflow also uploads recovery copies as short-lived Actions artifacts.
-Caches and artifacts are **not permanent storage**; if they expire, crawling
-may have to start over. A durable storage policy will be needed before
-long-running exhaustive crawling.
+The mapping DB maps **titles**, not canonical episode counts. For AniSkip,
+existing MAL-native episodes in released `timestamps.db` seed the episode
+list, including gaps and two speculative future episodes, bounded by
+`--max-episodes` (default 96 unless independently known). When no episode
+hints exist, episodes 1-2 are checked. **A positive API result now advances
+the discovery frontier** on subsequent runs.
 
-Success and negative results are rechecked after 30 and 14 days respectively.
-Errors/HTTP 403/429 terminate that source's run without deleting prior state.
-Requests are budgeted (`--max-requests`) and retries consume the same budget.
+However, titles with no results in the initial probes may still contain
+unseen later episodes. A completed bootstrap therefore means all *known*
+candidates were checked, not that the API definitively contains no additional
+episodes. Separate episode-count discovery is a future enhancement.
 
-## GitHub Actions
+## Incremental refresh and failure handling
 
-Workflow: [`crawl.yml`](../.github/workflows/crawl.yml)
+| State | Persisted result | Earliest normal retry |
+| --- | --- | --- |
+| Found data | `found` and all segment observations | 30 days |
+| No data | `missing` | 14 days |
+| Broken Anime Skip internal timestamp row | `source_error`, or preserve previously found data, with a diagnostic | 14 days |
+| 403 / 429 | Stop the source, preserve collected state | Subsequent operator/schedule run |
+| Network/5xx failures | Limited retries within the same request budget; abort if exhausted | Subsequent run |
 
-- Automatic bounded daily crawl at **05:23 UTC**
-- Manual trigger using `workflow_dispatch`
-- On crawler-code pushes only: **2 requests/source** for a small smoke test
-- Routine budget: **500 requests/source/run**
-- Hard manual budget: 1–5000 requests/source
-- `70 RPM` on both AniSkip and Anime Skip, with API 429/403 stop behavior
-- Max job runtime: 90 minutes; all outputs are separate Actions artifacts
+The current crawler puts new/unseen keys ahead of due rechecks. It writes
+checkpoint files atomically every 25 completed candidates and on exit,
+and records each outbound request, including retries, against the RPM
+and total request budgets.
 
-For Anime Skip, configure an Actions repository secret named
-**`ANIME_SKIP_CLIENT_ID`** under **Settings → Secrets and variables → Actions**.
-The crawler **does not** hardcode or upload the ID found on any server.
-Without this secret, only the Anime Skip job is cleanly skipped; AniSkip runs.
+GitHub API checkpoint persistence verifies the bytes written. If a known
+durable state branch exists but its file is absent or invalid, the workflow
+**fails rather than silently resetting** accumulated work. An initial run
+may seed its state from the existing GitHub Actions cache, to preserve data
+collected before the durable-store upgrade.
 
-## Local usage
+## Source-native boundaries and provenance
 
-Install the project:
+- `aniskip`: native MAL episode, `aniskip` consensus lineage. The CSV source
+  and API share the lineage to avoid duplicate independent votes.
+- `anime_skip`: native AniList title ID, upstream episode UUID, season,
+  absolute number and original lineage (e.g. `ANIME_SKIP`,
+  `BETTER_VRV`, `ANISKIP`). Third-party mirrors use the
+  **underlying** lineage rather than an artificial extra Anime Skip vote.
+- An AniList episode number is **not** automatically considered equivalent to
+  MAL episode `ep:N`. If a native AniList episode identity has no independent
+  `episode_ids` proof for the same AMDB anchor, that API observation remains
+  queryable in `source_segments` instead of corrupting canonical episode data.
+- Unknown upstream lineages are preserved but are **consensus-ineligible**.
+- The release importer resolves the latest provider IDs to AMDB anchors again,
+  validates every segment, prevents duplicate source IDs and records
+  normalization decisions in `timestamps-evidence.db`.
+- Source snapshot hashes, import counts and exact distribution notices are
+  included in `manifest.json`. Changes are included in release fingerprint
+  comparisons, so unchanged snapshots do not alone trigger new releases.
 
-```bash
-python -m pip install -e .
+## Release integration: explicitly gated
+
+API observations are now supported by the builder but **not implicitly
+distributed**. The provider's software license is not necessarily a grant to
+republish the crowdsourced database. Verify source-specific terms/permission
+before turning on publication.
+
+After permission is confirmed, set the repository **Actions variable**
+`ENABLE_API_CRAWL_IMPORT` to `true` (Settings → Secrets and variables →
+Actions → Variables), not a secret. Both the Database build workflow and
+the Release workflow will then restore both authoritative checkpoints,
+validate their presence and call:
+
+```sh
+anime-timestamp-db build --output-dir artifacts \
+  --api-checkpoint-dir api-checkpoints \
+  --allow-api-redistribution
 ```
 
-Prepare the reference databases from current mapping and timestamp Releases
-(`mappings.db` and optionally `timestamps.db`). The workflow downloads
-these references automatically.
+Both API sources are visible separately as `aniskip-api` and
+`anime-skip-api`, with `ANIME_SKIP_API_NOTICE.md` in the release.
+Source-native unresolved Anime Skip episodes remain available by their
+source-specific references. The compiler fails closed if an explicitly
+requested checkpoint is missing; it cannot silently publish partial data.
 
-```bash
-python scripts/crawl_timestamps.py \
-  --source aniskip --mapping-db mappings.db \
-  --timestamps-db timestamps.db --rpm 70 --max-requests 500
+The following remain distinct:
 
-ANIME_SKIP_CLIENT_ID='your-private-id' python scripts/crawl_timestamps.py \
-  --source anime_skip --mapping-db mappings.db \
-  --rpm 70 --max-requests 500
+- `crawler-state-*` branches: durable checkpoint and recovery history;
+- short-lived Actions artifacts: audit/debugging and offline exports;
+- `timestamps.db` and `timestamps-evidence.db`: optional compiled
+  distribution under the explicit release permission gate.
 
-python scripts/crawl_timestamps.py \
-  --source anime_skip --mapping-db mappings.db --dry-run
+## CLI and offline verification
+
+```sh
+# Run a bounded local crawl:
+python scripts/crawl_timestamps.py --source aniskip \
+  --mapping-db mappings.db --timestamps-db timestamps.db \
+  --max-requests 1000 --rpm 70
+
+ANIME_SKIP_CLIENT_ID='<private-client-id>' \
+python scripts/crawl_timestamps.py --source anime_skip \
+  --mapping-db mappings.db --max-requests 1000 --rpm 70
+
+# Offline export only: no API access, no Client ID required:
+python scripts/crawl_timestamps.py --source anime_skip \
+  --mapping-db mappings.db --export-only
+
+# GitHub Actions alone may restore/persist authenticated durable state:
+python scripts/checkpoint_store.py restore --source aniskip
+python scripts/checkpoint_store.py persist --source aniskip
 ```
 
-The results are stored under `crawler-output/`; the checkpoint defaults to
-`.build-cache/crawler-state/`.
+Do not add Client IDs or authentication headers to code, logs, commits or
+release assets. The GitHub Actions secret remains
+`ANIME_SKIP_CLIENT_ID`.
 
-## Publication gate
-
-The existing builder continues to use the proven public snapshot imports.
-The new crawler's API observations **are not silently included in releases**:
-we first need tests of episode normalization and cross-source provenance,
-snapshot durability, and clarification of bulk redistribution terms from each
-provider. AniSkip's publicly exported CSV and its live API are not equivalent
-licensing guarantees. This design keeps the current published databases safe
-while letting the crawler gather evidence for a future importer.
+Important: Running `mode=bootstrap` is an intentional potentially
+multi-day continuous API load. Use it only when the providers' API usage
+policy permits the collection volume and the public archive is authorized.

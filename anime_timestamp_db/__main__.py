@@ -45,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     build_cmd.add_argument("--cache-dir", type=Path)
     build_cmd.add_argument("--force-download", action="store_true")
     build_cmd.add_argument("--consensus-tolerance-ms", type=int, default=5000)
+    build_cmd.add_argument(
+        "--api-checkpoint-dir",
+        type=Path,
+        help="Opt-in previously crawled AniSkip/Anime Skip checkpoints",
+    )
+    build_cmd.add_argument(
+        "--allow-api-redistribution",
+        action="store_true",
+        help="Operator confirms rights/permissions for redistribution of API datasets",
+    )
 
     audit_cmd = subparsers.add_parser(
         "audit", help="Audit runtime + evidence databases"
@@ -102,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
             cache_dir=args.cache_dir,
             force_download=args.force_download,
             consensus_tolerance_ms=args.consensus_tolerance_ms,
+            api_checkpoint_dir=args.api_checkpoint_dir,
+            allow_api_redistribution=args.allow_api_redistribution,
         )
         print(_json(manifest))
         return 0

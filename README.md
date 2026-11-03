@@ -25,21 +25,37 @@ The default build uses reproducible public bulk/static files. It does not call r
 | [Open Anime Timestamps](https://github.com/Ellivers/open-anime-timestamps) | AniDB-native timestamp source and aggregator | AniDB regular episodes are projected through AniBridge and verified against one AMDB anchor. Multi-source aggregate rows remain queryable but do not vote in consensus. |
 | [Baha Anime Skip](https://github.com/JacobLinCool/baha-anime-skip) | Source-addressable timestamp dataset | Stored by Bahamut `videoSn`; no fake MAL/AniList/AMDB identity is invented. |
 
-## Experimental incremental API crawling
+## Durable AniSkip / Anime Skip API crawling
 
-Separate, bounded crawlers now collect candidate timestamp observations from the
-**AniSkip v2 API** (MAL + episode) and **Anime Skip GraphQL API** (AniList +
-show episodes). Both use the complete stable identity catalog in
-`mappings.db` and a **70 requests/minute** per-source rate limiter.
-Crawler progress and collected observations are stored only in dedicated
-Actions caches/artifacts, never as service state in the published SQLite
-databases. The existing release builder is unchanged: API-derived snapshots
-are reviewed separately until provenance, episode normalization and data
-redistribution terms are validated.
+Two independent 70-requests/minute collectors query **AniSkip v2** (MAL ID
+plus series episode) and **Anime Skip GraphQL** (AniList ID plus title episodes).
+The crawler's default budget is now **1000 requests per source per run**.
 
-See [crawling architecture and setup](docs/CRAWLING.md) and
-[the Actions crawler workflow](.github/workflows/crawl.yml). Anime Skip requires
-a privately configured `ANIME_SKIP_CLIENT_ID` Actions secret.
+The initial pass can be started once with `mode=bootstrap` and is executed as
+**automatically chained bounded workflow runs**, with a default hard safety
+limit of 160 runs. On success the daily workflow switches back to ordinary
+incremental checks, rechecking positives every 30 days and negatives/errors
+after 14 days. AniSkip can now discover later episode candidates from its own
+positive results. Unknown episodes beyond the discovery frontier cannot yet
+be claimed as exhaustively searched.
+
+**Durable recovery** uses source-specific GitHub branches
+`crawler-state-aniskip` and `crawler-state-anime_skip`. These are publicly
+readable in a public repo. GitHub Actions caches and uploaded artifacts are
+secondary recovery aids, not the primary state database.
+
+API snapshots can be **optionally imported** into `timestamps.db` and
+`timestamps-evidence.db` with fully attributed evidence and source lineages,
+deduplication, and conservative native episode matching. AniSkip CSV and
+API observations share a consensus lineage; unproven Anime Skip/AniList
+episode numbers remain source-only. **Release import is disabled by default**:
+check upstream redistribution rights and then enable the repository Actions
+variable `ENABLE_API_CRAWL_IMPORT=true` (see the detailed instructions).
+
+See [the full crawling and release architecture](docs/CRAWLING.md),
+[the API data notice](ANIME_SKIP_API_NOTICE.md) and
+[the Actions workflow](.github/workflows/crawl.yml). Anime Skip requires
+the private `ANIME_SKIP_CLIENT_ID` Actions secret.
 
 Open Anime Timestamps currently declares no explicit repository/data license. The build attributes it, preserves exact snapshot provenance, and includes `OPEN_ANIME_TIMESTAMPS_NOTICE.md` without inventing a license.
 
