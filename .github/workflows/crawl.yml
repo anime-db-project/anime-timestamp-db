@@ -26,8 +26,10 @@ on:
     paths:
       - "scripts/crawl_timestamps.py"
       - "scripts/checkpoint_store.py"
+      - "scripts/bootstrap_progress.py"
       - "tests/test_crawler.py"
       - "tests/test_checkpoint_store.py"
+      - "tests/test_bootstrap_progress.py"
       - ".github/workflows/crawl.yml"
 
 permissions:
@@ -166,6 +168,7 @@ jobs:
             crawler-output/${{ matrix.source }}-report.json
             .build-cache/crawler-state/${{ matrix.source }}.json.gz
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 30
 
       - name: Add summary
@@ -219,30 +222,8 @@ jobs:
         id: plan
         env:
           RUNS: ${{ inputs.remaining_runs }}
-        shell: bash
         run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import os
-          from pathlib import Path
-          reports = [
-              json.loads(Path(f"reports/{source}/crawler-output/{source}-report.json").read_text())
-              for source in ("aniskip", "anime_skip")
-          ]
-          remaining = int(os.environ["RUNS"])
-          if not 1 <= remaining <= 160:
-              raise SystemExit("remaining_runs must be an integer 1-160")
-          if any(r.get("errors") for r in reports):
-              raise SystemExit("Fatal API errors; bootstrap paused")
-          unfinished = {
-              r["source"]: r["initial_unchecked_after_run"]
-              for r in reports
-          }
-          print(f"unfinished={unfinished}", file=__import__("sys").stderr)
-          continue_run = any(unfinished.values()) and remaining > 1
-          print(f"continue={'true' if continue_run else 'false'}")
-          print(f"next_runs={remaining - 1}")
-          PY
+          python scripts/bootstrap_progress.py             --root reports --remaining-runs "$RUNS" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch next bounded bootstrap batch
         if: steps.plan.outputs.continue == 'true'
