@@ -25,6 +25,22 @@ The default build uses reproducible public bulk/static files. It does not call r
 | [Open Anime Timestamps](https://github.com/Ellivers/open-anime-timestamps) | AniDB-native timestamp source and aggregator | AniDB regular episodes are projected through AniBridge and verified against one AMDB anchor. Multi-source aggregate rows remain queryable but do not vote in consensus. |
 | [Baha Anime Skip](https://github.com/JacobLinCool/baha-anime-skip) | Source-addressable timestamp dataset | Stored by Bahamut `videoSn`; no fake MAL/AniList/AMDB identity is invented. |
 
+## Experimental incremental API crawling
+
+Separate, bounded crawlers now collect candidate timestamp observations from the
+**AniSkip v2 API** (MAL + episode) and **Anime Skip GraphQL API** (AniList +
+show episodes). Both use the complete stable identity catalog in
+`mappings.db` and a **70 requests/minute** per-source rate limiter.
+Crawler progress and collected observations are stored only in dedicated
+Actions caches/artifacts, never as service state in the published SQLite
+databases. The existing release builder is unchanged: API-derived snapshots
+are reviewed separately until provenance, episode normalization and data
+redistribution terms are validated.
+
+See [crawling architecture and setup](docs/CRAWLING.md) and
+[the Actions crawler workflow](.github/workflows/crawl.yml). Anime Skip requires
+a privately configured `ANIME_SKIP_CLIENT_ID` Actions secret.
+
 Open Anime Timestamps currently declares no explicit repository/data license. The build attributes it, preserves exact snapshot provenance, and includes `OPEN_ANIME_TIMESTAMPS_NOTICE.md` without inventing a license.
 
 ## Schema v5 identity model
