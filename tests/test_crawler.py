@@ -9,6 +9,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
 
@@ -61,9 +62,10 @@ class CrawlerTests(unittest.TestCase):
         catalog, stats = crawl.load_catalog(self.mapping)
         self.assertEqual(catalog[101], {"mal": "5114", "anilist": "9253"})
         self.assertEqual(stats["mal_titles"], 3)
-        with sqlite3.connect(self.mapping) as conn:
+        with closing(sqlite3.connect(self.mapping)) as conn:
             conn.execute("INSERT INTO nodes VALUES(6, 'mal', '999')")
             conn.execute("INSERT INTO entity_nodes VALUES(1, 6)")
+            conn.commit()
         ambiguous, stats = crawl.load_catalog(self.mapping)
         self.assertNotIn("mal", ambiguous[101])
         self.assertEqual(ambiguous[101]["anilist"], "9253")
@@ -156,7 +158,7 @@ class CrawlerTests(unittest.TestCase):
     def test_verified_mal_episode_hints_only(self) -> None:
         path = self.root / "timestamps.db"
         create_runtime_database(path)
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn:
             conn.execute(
                 "INSERT INTO sources(source_key,display_name) VALUES('aniskip','AniSkip')"
             )
@@ -171,6 +173,7 @@ class CrawlerTests(unittest.TestCase):
                 "VALUES(101,'mal','', '7', ?)",
                 (episode,),
             )
+            conn.commit()
         hints = crawl.mal_episode_hints(path)
         self.assertEqual(hints[101], {7})
         catalog, _ = crawl.load_catalog(self.mapping)
