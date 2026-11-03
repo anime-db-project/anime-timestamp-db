@@ -9,6 +9,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
@@ -72,15 +73,32 @@ class CrawlerTests(unittest.TestCase):
         self.assertEqual(stats["ambiguous_provider_keys"], 1)
 
     def test_catalog_rejects_cross_anchor_external_id_collisions(self) -> None:
-        with closing(sqlite3.connect(self.mapping)) as conn:
-            conn.execute("INSERT INTO entity_nodes VALUES(3, 1)")
-            conn.commit()
-        catalog, stats = crawl.load_catalog(self.mapping)
+        # The current schema prevents this, but imported/legacy rows must
+        # still be rejected if they ever violate the ownership invariant.
+        class LegacyConnection:
+            def execute(self, _query: str) -> list[tuple[int, str, str]]:
+                return [
+                    (101, "mal", "5114"),
+                    (101, "anilist", "9253"),
+                    (202, "mal", "21"),
+                    (202, "anilist", "1055"),
+                    (303, "mal", "22"),
+                    (303, "mal", "5114"),
+                ]
+
+            def close(self) -> None:
+                pass
+
+        with (
+            mock.patch.object(crawl, "mapping_database_metadata"),
+            mock.patch.object(crawl.sqlite3, "connect", return_value=LegacyConnection()),
+        ):
+            catalog, stats = crawl.load_catalog(self.mapping)
         self.assertNotIn("mal", catalog[101])
-        self.assertNotIn("mal", catalog[303])
+        self.assertEqual(catalog[303], {})
         self.assertEqual(catalog[101]["anilist"], "9253")
         self.assertEqual(stats["ambiguous_external_ids"], 1)
-        self.assertEqual(stats["mal_titles"], 2)
+        self.assertEqual(stats["mal_titles"], 1)
         items = crawl.candidates(
             "aniskip", catalog, {}, unknown_episodes=2, max_episodes=48
         )
