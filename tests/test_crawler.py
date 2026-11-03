@@ -71,6 +71,21 @@ class CrawlerTests(unittest.TestCase):
         self.assertEqual(ambiguous[101]["anilist"], "9253")
         self.assertEqual(stats["ambiguous_provider_keys"], 1)
 
+    def test_catalog_rejects_cross_anchor_external_id_collisions(self) -> None:
+        with closing(sqlite3.connect(self.mapping)) as conn:
+            conn.execute("INSERT INTO entity_nodes VALUES(3, 1)")
+            conn.commit()
+        catalog, stats = crawl.load_catalog(self.mapping)
+        self.assertNotIn("mal", catalog[101])
+        self.assertNotIn("mal", catalog[303])
+        self.assertEqual(catalog[101]["anilist"], "9253")
+        self.assertEqual(stats["ambiguous_external_ids"], 1)
+        self.assertEqual(stats["mal_titles"], 2)
+        items = crawl.candidates(
+            "aniskip", catalog, {}, unknown_episodes=2, max_episodes=48
+        )
+        self.assertNotIn("5114:1", {item[0] for item in items})
+
     def test_aniskip_json_and_invalid_segments(self) -> None:
         payload = {
             "found": True,
@@ -553,6 +568,49 @@ class CrawlerTests(unittest.TestCase):
         self.assertIsNone(result[0]["absolute_number"])
         self.assertFalse(result[0]["episode_identity_proven"])
         self.assertEqual(result[0]["upstream_episode_id"], "ep-season-2")
+
+    def test_checkpoint_export_rejects_inconsistent_records(self) -> None:
+        valid = {
+            "source": "aniskip",
+            "native_title_id": "5114",
+            "episode": 1,
+            "type": "opening",
+            "start_ms": 1000,
+            "end_ms": 90000,
+            "source_segment_id": "valid",
+            "upstream_lineage": "aniskip",
+        }
+        state = {
+            "version": 1,
+            "source": "aniskip",
+            "records": {
+                "5114:1": {
+                    "status": "found",
+                    "segments": [
+                        valid,
+                        {**valid, "episode": 2, "source_segment_id": "wrong-ep"},
+                        {**valid, "native_title_id": "21", "source_segment_id": "foreign"},
+                    ],
+                },
+                "21:1": {
+                    "status": "missing",
+                    "segments": [{**valid, "native_title_id": "21", "source_segment_id": "stale"}],
+                },
+                "5114:bad": {
+                    "status": "found",
+                    "segments": [{**valid, "source_segment_id": "bad-key"}],
+                },
+            },
+        }
+        catalog, _ = crawl.load_catalog(self.mapping)
+        target = self.root / "filtered.jsonl.gz"
+        counts = crawl.export_snapshot("aniskip", state, catalog, target)
+        self.assertEqual(counts, {"observations": 1, "titles": 1})
+        with gzip.open(target, "rt", encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle]
+        self.assertEqual(rows[0]["source_segment_id"], "valid")
+        self.assertEqual(rows[0]["episode_key"], "ep:1")
+        self.assertEqual(rows[0]["anchor_id"], 101)
 
     def test_export_only_has_no_network_effects(self) -> None:
         state = {

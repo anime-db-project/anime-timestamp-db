@@ -107,6 +107,9 @@ def load_catalog(path: Path) -> tuple[dict[int, dict[str, str]], dict[str, int]]
     mapping_database_metadata(path)
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     duplicates: set[tuple[int, str]] = set()
+    # Never assign a native provider ID shared between distinct AMDB anchors.
+    external_owners: dict[tuple[str, str], int] = {}
+    ambiguous_external_ids: set[tuple[str, str]] = set()
     candidates: dict[int, dict[str, str]] = defaultdict(dict)
     try:
         for anchor, provider, external in conn.execute(
@@ -122,6 +125,10 @@ def load_catalog(path: Path) -> tuple[dict[int, dict[str, str]], dict[str, int]]
             external = str(external).strip()
             if positive_int(external) is None:
                 continue
+            native_key = (provider, external)
+            owner = external_owners.setdefault(native_key, anchor)
+            if owner != anchor:
+                ambiguous_external_ids.add(native_key)
             existing = candidates[anchor].get(provider)
             if existing is not None and existing != external:
                 duplicates.add((anchor, provider))
@@ -131,9 +138,14 @@ def load_catalog(path: Path) -> tuple[dict[int, dict[str, str]], dict[str, int]]
         conn.close()
     for anchor, provider in duplicates:
         candidates[anchor].pop(provider, None)
+    for ids in candidates.values():
+        for provider, external in tuple(ids.items()):
+            if (provider, external) in ambiguous_external_ids:
+                ids.pop(provider)
     return dict(candidates), {
         "anchors": len(candidates),
         "ambiguous_provider_keys": len(duplicates),
+        "ambiguous_external_ids": len(ambiguous_external_ids),
         "mal_titles": sum("mal" in ids for ids in candidates.values()),
         "anilist_titles": sum("anilist" in ids for ids in candidates.values()),
     }
@@ -459,9 +471,21 @@ def export_snapshot(
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     for key, record in sorted(state["records"].items()):
-        if not isinstance(record, dict):
+        if not isinstance(record, dict) or record.get("status") != "found":
             continue
-        native_id = key.split(":", 1)[0]
+        if source == "aniskip":
+            parts = key.split(":")
+            if len(parts) != 2 or positive_int(parts[0]) is None:
+                continue
+            checked_episode = positive_int(parts[1])
+            if checked_episode is None:
+                continue
+            native_id = parts[0]
+        else:
+            if positive_int(key) is None:
+                continue
+            native_id = key
+            checked_episode = None
         anchor = by_id.get(native_id)
         if anchor is None:
             continue
@@ -471,6 +495,11 @@ def export_snapshot(
             if (
                 segment.get("native_title_id") != native_id
                 or segment.get("source") != source
+                or positive_int(segment.get("episode")) is None
+                or (
+                    checked_episode is not None
+                    and positive_int(segment.get("episode")) != checked_episode
+                )
             ):
                 continue
             row = dict(segment)

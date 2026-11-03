@@ -61,6 +61,9 @@ summaries to watch `initial_unchecked_after_run`; completion means zero
 **known candidates**, not exhaustive coverage of every possible series in
 anime history.
 
+A bootstrap run requires the Anime Skip Client ID. Without it, preflight now
+fails immediately rather than silently omitting the source.
+
 At the currently indexed volume (~124k AniSkip episode candidates and ~22k
 Anime Skip titles), a complete initial pass needs on the order of **125
 batches**, and at 70 RPM requires **at least ~30 hours** of combined crawl
@@ -116,6 +119,9 @@ collected before the durable-store upgrade.
   `episode_ids` proof for the same AMDB anchor, that API observation remains
   queryable in `source_segments` instead of corrupting canonical episode data.
 - Unknown upstream lineages are preserved but are **consensus-ineligible**.
+- The catalog excludes a provider ID shared by multiple AMDB anchors; export
+  rejects mismatched checkpoint episode keys and non-positive source records.
+  Neither case may silently attribute observations to the wrong anime.
 - The release importer resolves the latest provider IDs to AMDB anchors again,
   validates every segment, prevents duplicate source IDs and records
   normalization decisions in `timestamps-evidence.db`.

@@ -53,6 +53,7 @@ jobs:
     env:
       ANIME_SKIP_CLIENT_ID: ${{ secrets.ANIME_SKIP_CLIENT_ID }}
       SOURCE: ${{ matrix.source }}
+      CRAWL_MODE: ${{ inputs.mode || 'maintenance' }}
       REQUEST_LIMIT: ${{ github.event_name == 'push' && '2' || inputs.max_requests || '1000' }}
 
     steps:
@@ -69,6 +70,10 @@ jobs:
         shell: bash
         run: |
           if [[ "$SOURCE" == "anime_skip" && -z "$ANIME_SKIP_CLIENT_ID" ]]; then
+            if [[ "$CRAWL_MODE" == "bootstrap" ]]; then
+              echo "Cannot bootstrap Anime Skip without ANIME_SKIP_CLIENT_ID." >&2
+              exit 1
+            fi
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Anime Skip skipped: set Actions secret ANIME_SKIP_CLIENT_ID." >> "$GITHUB_STEP_SUMMARY"
           else
