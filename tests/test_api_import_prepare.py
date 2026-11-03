@@ -35,9 +35,7 @@ class ApiImportPrepareTests(unittest.TestCase):
         ):
             result = api_import_prepare.prepare_api_import(self.root)
         self.assertTrue(result["enabled"])
-        self.assertEqual(
-            result["sources"], {"aniskip": "ready", "anime_skip": "ready"}
-        )
+        self.assertEqual(result["sources"], {"aniskip": "ready", "anime_skip": "ready"})
 
     def test_bootstrap_without_checkpoints_keeps_static_build(self) -> None:
         with mock.patch.object(

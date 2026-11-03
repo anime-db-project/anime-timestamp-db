@@ -26,7 +26,9 @@ def prepare_api_import(output_dir: Path) -> dict[str, object]:
         result = restore(source, target)
         if result["restored"]:
             if not target.is_file() or target.stat().st_size == 0:
-                raise RuntimeError(f"{source} claimed restored but checkpoint is absent")
+                raise RuntimeError(
+                    f"{source} claimed restored but checkpoint is absent"
+                )
             status[source] = "ready"
         else:
             status[source] = "pending"
