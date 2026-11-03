@@ -1,0 +1,112 @@
+name: One-time timestamp release benchmark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/benchmark-once.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download latest runtime database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo "$GITHUB_REPOSITORY" --pattern timestamps.db --dir benchmark
+
+      - name: Benchmark indexed runtime queries
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import random
+          import sqlite3
+          import statistics
+          import time
+          from pathlib import Path
+
+          path = Path('benchmark/timestamps.db')
+          rng = random.Random(20261103)
+          conn = sqlite3.connect(path)
+          episodes = conn.execute('SELECT id,anchor_id,episode_key FROM episodes').fetchall()
+          episode_ids = conn.execute('SELECT anchor_id,provider,scope,episode_number_text FROM episode_ids').fetchall()
+          episode_refs = conn.execute('SELECT source_id,source_title_key,source_episode_key FROM episode_refs').fetchall()
+          segment_keys = conn.execute('SELECT DISTINCT episode_id,segment_type FROM segments').fetchall()
+          consensus_keys = conn.execute('SELECT DISTINCT episode_id,segment_type FROM consensus_segments').fetchall()
+          conn.close()
+
+          n = 5000
+          queries = {
+              'episode_by_anchor_key': (
+                  'SELECT id,episode_number_text,episode_number,is_special,duration_ms FROM episodes WHERE anchor_id=? AND episode_key=?',
+                  [(row[1], row[2]) for row in rng.sample(episodes, min(n, len(episodes)))],
+              ),
+              'episode_id_exact': (
+                  'SELECT episode_id FROM episode_ids WHERE anchor_id=? AND provider=? AND scope=? AND episode_number_text=?',
+                  rng.sample(episode_ids, min(n, len(episode_ids))),
+              ),
+              'episode_ref_exact': (
+                  'SELECT episode_id,source_episode_number_text FROM episode_refs WHERE source_id=? AND source_title_key=? AND source_episode_key=?',
+                  rng.sample(episode_refs, min(n, len(episode_refs))),
+              ),
+              'segments_by_episode_type': (
+                  'SELECT id,start_ms,end_ms,source_id,lineage_id FROM segments WHERE episode_id=? AND segment_type=? ORDER BY start_ms,end_ms',
+                  rng.sample(segment_keys, min(n, len(segment_keys))),
+              ),
+              'consensus_by_episode_type': (
+                  'SELECT id,start_ms,end_ms,confidence,member_count,source_count,lineage_count FROM consensus_segments WHERE episode_id=? AND segment_type=? ORDER BY cluster_index',
+                  rng.sample(consensus_keys, min(n, len(consensus_keys))),
+              ),
+          }
+
+          result = {'database_bytes': path.stat().st_size, 'queries': {}}
+          for name, (sql, values) in queries.items():
+              runs = []
+              for _ in range(3):
+                  db = sqlite3.connect(path)
+                  cur = db.cursor()
+                  for value in values[:200]:
+                      cur.execute(sql, tuple(value)).fetchall()
+                  timings = []
+                  rows = 0
+                  for value in values:
+                      t0 = time.perf_counter_ns()
+                      found = cur.execute(sql, tuple(value)).fetchall()
+                      timings.append((time.perf_counter_ns() - t0) / 1000)
+                      rows += len(found)
+                  db.close()
+                  runs.append({
+                      'median_us': statistics.median(timings),
+                      'p95_us': statistics.quantiles(timings, n=100)[94],
+                      'mean_us': statistics.mean(timings),
+                      'avg_rows': rows / len(values),
+                  })
+              mean_us = statistics.median([run['mean_us'] for run in runs])
+              result['queries'][name] = {
+                  'median_us': statistics.median([run['median_us'] for run in runs]),
+                  'p95_us': statistics.median([run['p95_us'] for run in runs]),
+                  'mean_us': mean_us,
+                  'ops_per_s': 1_000_000 / mean_us,
+                  'avg_rows': statistics.median([run['avg_rows'] for run in runs]),
+              }
+
+          conn = sqlite3.connect(path)
+          result['query_plans'] = {
+              'episode': [list(row) for row in conn.execute("EXPLAIN QUERY PLAN SELECT id FROM episodes WHERE anchor_id=1 AND episode_key='1'")],
+              'segments': [list(row) for row in conn.execute("EXPLAIN QUERY PLAN SELECT id FROM segments WHERE episode_id=1 AND segment_type='op'")],
+              'consensus': [list(row) for row in conn.execute("EXPLAIN QUERY PLAN SELECT id FROM consensus_segments WHERE episode_id=1 AND segment_type='op'")],
+          }
+          conn.close()
+          Path('benchmark/results.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: timestamp-performance-benchmark
+          path: benchmark/results.json
+          retention-days: 1
