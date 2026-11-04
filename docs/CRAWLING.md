@@ -116,9 +116,20 @@ collected before the durable-store upgrade.
   `BETTER_VRV`, `ANISKIP`). Third-party mirrors use the
   **underlying** lineage rather than an artificial extra Anime Skip vote.
 - An AniList episode number is **not** automatically considered equivalent to
-  MAL episode `ep:N`. If a native AniList episode identity has no independent
-  `episode_ids` proof for the same AMDB anchor, that API observation remains
-  queryable in `source_segments` instead of corrupting canonical episode data.
+  MAL episode `ep:N`. Native Anime Skip episodes are first checked against the
+  independently built `episode_ids` index (which is now populated **before**
+  the API stage). Where that is missing, an exact, uniquely invertible
+  AniBridge `AniDB:R -> AniList episode + MAL episode` mapping may prove the
+  playback-unit identity. All three native title IDs must resolve to the **same
+  AMDB anchor**. This can create a new canonical episode or title without
+  assuming AniList and MAL episode numbers are equal.
+- The AniBridge route is rejected for split/combined ratio mappings, absent or
+  conflicting MAL targets, ambiguous inverse ranges, multiple upstream
+  episode UUIDs for a purported native episode number, and Anime Skip
+  season-local episodes without a proven absolute/first-season identity.
+  Disputed observations remain queryable in `source_segments`.
+  Accepted bridge observations are tagged `exact-anibridge-api`; their exact
+  AniDB, MAL and AniList evidence is included in the record metadata.
 - Unknown upstream lineages are preserved but are **consensus-ineligible**.
 - The catalog excludes a provider ID shared by multiple AMDB anchors; export
   rejects mismatched checkpoint episode keys and non-positive source records.

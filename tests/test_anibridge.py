@@ -46,6 +46,53 @@ class AniBridgeTests(unittest.TestCase):
             4,
         )
 
+    def test_reverse_anidb_ani_episode_preserves_provider_numbering(self) -> None:
+        index = AniBridgeIndex(
+            {
+                "anidb:30:R": {
+                    "anilist:9253": {"1-4": "10-11,20-21"},
+                    "mal:5114": {"1-4": "7-10"},
+                }
+            }
+        )
+        second = index.resolve_anidb_regular_for_anilist("30", "9253", 11)
+        self.assertIsNotNone(second)
+        anidb_episode, result = second
+        self.assertEqual(anidb_episode, 2)
+        self.assertIn(
+            ("mal", "5114", 8),
+            {
+                (x.descriptor.provider, x.descriptor.external_id, x.episode_number)
+                for x in result.targets
+            },
+        )
+        self.assertEqual(
+            index.resolve_anidb_regular_for_anilist("30", "9253", 20)[0], 3
+        )
+        self.assertIsNone(index.resolve_anidb_regular_for_anilist("30", "9253", 12))
+
+    def test_reverse_rejects_overlap_or_ratio_and_unknown_title(self) -> None:
+        ambiguous = AniBridgeIndex(
+            {
+                "anidb:30:R": {
+                    "anilist:9253": {"1-2": "1-2", "3-4": "2-3"},
+                }
+            }
+        )
+        self.assertIsNone(ambiguous.resolve_anidb_regular_for_anilist("30", "9253", 2))
+        complex_mapping = AniBridgeIndex(
+            {"anidb:30:R": {"anilist:9253": {"1-2": "1-4|2"}}}
+        )
+        self.assertIsNone(
+            complex_mapping.resolve_anidb_regular_for_anilist("30", "9253", 1)
+        )
+        self.assertIsNone(
+            complex_mapping.resolve_anidb_regular_for_anilist("30", "other", 1)
+        )
+        self.assertIsNone(
+            complex_mapping.resolve_anidb_regular_for_anilist("30", "9253", 0)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

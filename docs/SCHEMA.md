@@ -186,6 +186,27 @@ Single-source provenance keeps its own lineage. Multi-source aggregate rows rema
 
 Point-only `preview_start` markers remain evidence metadata and are not turned into guessed ranges.
 
+### Live AniSkip and Anime Skip API checkpoints
+
+AniSkip API observations are MAL-native and reuse AniSkip's consensus lineage.
+Anime Skip observations retain their original upstream lineages; mirrored
+data does not create independent consensus votes.
+
+For Anime Skip, native AniList title and episode numbers are never equated to
+MAL numbers by arithmetic. The builder first checks independently proven
+`episode_ids` for that AMDB anchor, which are indexed before API ingestion.
+Otherwise, a uniquely reversible, one-to-one AniBridge regular AniDB
+episode mapping must explicitly identify the same AniList episode and a MAL
+episode, with all three provider title IDs accepted into one AMDB anchor.
+Conflicting UUIDs, season-local numbers with no identity proof, split/combined
+mappings, ambiguous ranges, and existing episode-index conflicts are rejected
+for canonical import but preserved in `source_segments`.
+
+Bridged observations use `mapping_method=exact-anibridge-api` with the
+explicit AniDB and MAL episode proof recorded in the evidence metadata.
+These matches may add previously absent `titles` or `episodes` while leaving
+uncertain observations source-addressable rather than guessed.
+
 ### Baha Anime Skip
 
 Baha remains source-addressable by upstream `videoSn`. No MAL/AniList/AMDB identity is invented unless a future auditable bulk mapping exists.

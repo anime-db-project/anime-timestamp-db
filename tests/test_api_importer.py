@@ -9,6 +9,7 @@ from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
+from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.api_importer import import_api_checkpoint
 from anime_timestamp_db.build import build_database
 from anime_timestamp_db.audit import audit_databases
@@ -194,6 +195,260 @@ class ApiImportTests(unittest.TestCase):
             self.assertEqual(
                 rows,
                 [("anime-skip", 1), ("anime-skip-unknown", 0)],
+            )
+
+    def bridge_fixture(
+        self, *, mal_target: str = "5114", ratio: bool = False
+    ) -> tuple[Path, AniBridgeIndex]:
+        mapping = self.root / "bridge-mappings.db"
+        create_mapping_db(
+            mapping,
+            nodes=[
+                (1, "mal", "5114"),
+                (2, "anilist", "9253"),
+                (3, "anidb", "30"),
+            ],
+            anchors={101: [1, 2, 3]},
+        )
+        anilist = {"1": "1"}
+        if ratio:
+            anilist = {"1": "1-2|2"}
+        return mapping, AniBridgeIndex(
+            {
+                "anidb:30:R": {
+                    "anilist:9253": anilist,
+                    f"mal:{mal_target}": {"1": "7"},
+                }
+            }
+        )
+
+    def test_anime_skip_bridge_proves_different_mal_episode_number(self) -> None:
+        mapping, bridge = self.bridge_fixture()
+        first = self.segment("anime_skip", "9253", "ANIME_SKIP")
+        first.update(
+            episode_identity_proven=True,
+            upstream_episode_id="episode-uuid",
+            absolute_number=1,
+            season=1,
+        )
+        second = {**first, "source_segment_id": "segment2", "type": "ending"}
+        path = self.checkpoint(
+            "anime_skip", {"9253": {"status": "found", "segments": [first, second]}}
+        )
+        with (
+            MappingAnchorIndex(mapping) as identities,
+            DatabaseWriter(
+                self.root / "runtime.db", self.root / "evidence.db"
+            ) as writer,
+        ):
+            snapshot = writer.add_snapshot(ANIME_SKIP_API, self.download)
+            result = import_api_checkpoint(
+                path,
+                source="anime_skip",
+                writer=writer,
+                snapshot_id=snapshot,
+                identities=identities,
+                anibridge=bridge,
+            )
+            self.assertEqual(result.runtime_segments, 2)
+            self.assertEqual(result.source_only_segments, 0)
+            self.assertEqual(result.runtime_segments_exact, 2)
+            self.assertEqual(result.exact_episode_mappings, 1)
+            self.assertEqual(
+                writer.conn.execute(
+                    "SELECT anchor_id, episode_key FROM episodes"
+                ).fetchone(),
+                (101, "ep:7"),
+            )
+            self.assertEqual(
+                writer.conn.execute(
+                    "SELECT provider, scope, episode_number_text FROM episode_ids"
+                    " ORDER BY provider"
+                ).fetchall(),
+                [("anidb", "R", "1"), ("anilist", "", "1"), ("mal", "", "7")],
+            )
+            self.assertEqual(
+                writer.conn.execute(
+                    "SELECT DISTINCT mapping_method FROM segments"
+                ).fetchall(),
+                [("exact-anibridge-api",)],
+            )
+            self.assertEqual(
+                writer.conn.execute("SELECT COUNT(*) FROM episode_refs").fetchone()[0],
+                1,
+            )
+            evidence = writer.evidence.execute(
+                "SELECT metadata_json FROM records LIMIT 1"
+            ).fetchone()
+            self.assertEqual(json.loads(evidence[0])["bridge_proof"]["mal_episode"], 7)
+
+    def test_anime_skip_bridge_requires_usable_native_identity(self) -> None:
+        mapping, bridge = self.bridge_fixture()
+        row = self.segment("anime_skip", "9253", "ANIME_SKIP")
+        row.update(
+            episode_identity_proven=False,
+            upstream_episode_id="season-two-local-number",
+            season=2,
+            absolute_number=None,
+        )
+        path = self.checkpoint(
+            "anime_skip", {"9253": {"status": "found", "segments": [row]}}
+        )
+        with (
+            MappingAnchorIndex(mapping) as identities,
+            DatabaseWriter(
+                self.root / "runtime.db", self.root / "evidence.db"
+            ) as writer,
+        ):
+            snapshot = writer.add_snapshot(ANIME_SKIP_API, self.download)
+            result = import_api_checkpoint(
+                path,
+                source="anime_skip",
+                writer=writer,
+                snapshot_id=snapshot,
+                identities=identities,
+                anibridge=bridge,
+            )
+            self.assertEqual(result.source_only_segments, 1)
+            self.assertEqual(result.runtime_segments, 0)
+            self.assertEqual(
+                writer.conn.execute("SELECT count(*) FROM titles").fetchone()[0], 0
+            )
+
+    def test_anime_skip_bridge_conflicting_uuids_stay_source_only(self) -> None:
+        mapping, bridge = self.bridge_fixture()
+        row = self.segment("anime_skip", "9253", "ANIME_SKIP")
+        row.update(episode_identity_proven=True, upstream_episode_id="uuid-a")
+        other = {
+            **row,
+            "source_segment_id": "different",
+            "upstream_episode_id": "uuid-b",
+        }
+        path = self.checkpoint(
+            "anime_skip", {"9253": {"status": "found", "segments": [row, other]}}
+        )
+        with (
+            MappingAnchorIndex(mapping) as identities,
+            DatabaseWriter(
+                self.root / "runtime.db", self.root / "evidence.db"
+            ) as writer,
+        ):
+            snapshot = writer.add_snapshot(ANIME_SKIP_API, self.download)
+            result = import_api_checkpoint(
+                path,
+                source="anime_skip",
+                writer=writer,
+                snapshot_id=snapshot,
+                identities=identities,
+                anibridge=bridge,
+            )
+            self.assertEqual(result.source_only_segments, 2)
+            self.assertEqual(result.runtime_segments, 0)
+
+    def test_anime_skip_bridge_rejects_conflicting_existing_index(self) -> None:
+        mapping, bridge = self.bridge_fixture()
+        row = self.segment("anime_skip", "9253", "ANIME_SKIP")
+        row.update(episode_identity_proven=True, upstream_episode_id="uuid-a")
+        path = self.checkpoint(
+            "anime_skip", {"9253": {"status": "found", "segments": [row]}}
+        )
+        with (
+            MappingAnchorIndex(mapping) as identities,
+            DatabaseWriter(
+                self.root / "runtime.db", self.root / "evidence.db"
+            ) as writer,
+        ):
+            writer.get_or_create_title(101)
+            existing = writer.get_or_create_episode(
+                101, episode_key="ep:8", episode_number=8
+            )
+            writer.add_episode_id(
+                episode_id=existing, anchor_id=101, provider="anilist", episode_number=1
+            )
+            snapshot = writer.add_snapshot(ANIME_SKIP_API, self.download)
+            result = import_api_checkpoint(
+                path,
+                source="anime_skip",
+                writer=writer,
+                snapshot_id=snapshot,
+                identities=identities,
+                anibridge=bridge,
+            )
+            self.assertEqual(result.runtime_segments, 0)
+            self.assertEqual(result.source_only_segments, 1)
+            self.assertEqual(result.ambiguous, 1)
+            self.assertIsNone(
+                writer.conn.execute(
+                    "SELECT id FROM episodes WHERE episode_key='ep:7'"
+                ).fetchone()
+            )
+
+    def test_anime_skip_bridge_rejects_other_title_and_ratio(self) -> None:
+        # MAL 999 is not a member of the accepted AMDB anchor.
+        for mal_target, ratio in (("999", False), ("5114", True)):
+            with self.subTest(mal_target=mal_target, ratio=ratio):
+                mapping = self.root / f"map-{mal_target}-{ratio}.db"
+                create_mapping_db(
+                    mapping,
+                    nodes=[
+                        (1, "mal", "5114"),
+                        (2, "anilist", "9253"),
+                        (3, "anidb", "30"),
+                    ],
+                    anchors={101: [1, 2, 3]},
+                )
+                bridge = AniBridgeIndex(
+                    {
+                        "anidb:30:R": {
+                            "anilist:9253": {"1": "1-2|2" if ratio else "1"},
+                            f"mal:{mal_target}": {"1": "7"},
+                        }
+                    }
+                )
+                with MappingAnchorIndex(mapping) as identities:
+                    from anime_timestamp_db.api_episode_bridge import (
+                        AnimeSkipEpisodeBridge,
+                    )
+
+                    self.assertIsNone(
+                        AnimeSkipEpisodeBridge(bridge, identities).resolve(
+                            "9253", 101, 1
+                        )
+                    )
+
+    def test_api_episode_bridge_rejects_multiple_native_anilist_targets(self) -> None:
+        mapping, _bridge = self.bridge_fixture()
+        bridge = AniBridgeIndex(
+            {
+                "anidb:30:R": {
+                    "anilist:9253": {"1": "1"},
+                    "anilist:999": {"1": "1"},
+                    "mal:5114": {"1": "1"},
+                }
+            }
+        )
+        with MappingAnchorIndex(mapping) as identities:
+            from anime_timestamp_db.api_episode_bridge import AnimeSkipEpisodeBridge
+
+            self.assertIsNone(
+                AnimeSkipEpisodeBridge(bridge, identities).resolve("9253", 101, 1)
+            )
+
+    def test_api_episode_bridge_rejects_zero_regular_episode(self) -> None:
+        mapping, _bridge = self.bridge_fixture()
+        bridge = AniBridgeIndex(
+            {
+                "anidb:30:R": {
+                    "anilist:9253": {"0": "1"},
+                    "mal:5114": {"0": "1"},
+                }
+            }
+        )
+        with MappingAnchorIndex(mapping) as identities:
+            from anime_timestamp_db.api_episode_bridge import AnimeSkipEpisodeBridge
+
+            self.assertIsNone(
+                AnimeSkipEpisodeBridge(bridge, identities).resolve("9253", 101, 1)
             )
 
     def test_two_api_sources_survive_compaction_and_full_audit(self) -> None:

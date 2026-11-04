@@ -49,7 +49,7 @@ from anime_timestamp_db.schema import (
 )
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 10
+BUILD_FORMAT_VERSION = 11
 
 
 def _sha256(path: Path) -> str:
@@ -291,6 +291,16 @@ def build_database(
             snapshot_id=baha_snapshot,
         )
 
+        # Populate independently proven provider-episode identifiers before
+        # evaluating Anime Skip API timestamps against the native episode index.
+        # API segments must not create their own numeric equivalence proof.
+        with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
+            episode_index_stats = rebuild_episode_ids(
+                writer.conn,
+                skipdb_mappings,
+                identities,
+            )
+
         api_stats: dict[str, dict[str, object]] = {}
         for source, spec in api_sources:
             if source not in api_downloads:
@@ -316,15 +326,15 @@ def build_database(
                 writer=writer,
                 snapshot_id=snapshot_id,
                 identities=identities,
+                anibridge=anibridge,
             ).as_dict()
 
         normalization_stats = merge_movie_episode_aliases(writer.conn)
-        with SkipDBMappingIndex(mapping_path, anibridge) as skipdb_mappings:
-            episode_index_stats = rebuild_episode_ids(
-                writer.conn,
-                skipdb_mappings,
-                identities,
-            )
+        # Include AniSkip/Anime Skip-proven episode identifiers in the final
+        # manifest count, while preserving exact import insert statistics.
+        episode_index_stats.provider_episode_ids = int(
+            writer.conn.execute("SELECT COUNT(*) FROM episode_ids").fetchone()[0]
+        )
 
         consensus_stats = rebuild_consensus(
             writer.conn,

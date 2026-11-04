@@ -14,6 +14,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from anime_timestamp_db.anibridge import AniBridgeIndex
+from anime_timestamp_db.api_episode_bridge import AnimeSkipEpisodeBridge
 from anime_timestamp_db.config import ANIME_SKIP_API, ANISKIP_API
 from anime_timestamp_db.database import DatabaseWriter, IdentityConflict
 from anime_timestamp_db.importers import ImportStats
@@ -89,6 +91,7 @@ def import_api_checkpoint(
     writer: DatabaseWriter,
     snapshot_id: int,
     identities: MappingAnchorIndex,
+    anibridge: AniBridgeIndex | None = None,
 ) -> ImportStats:
     if source not in ("aniskip", "anime_skip"):
         raise ValueError("Unknown API checkpoint source")
@@ -97,6 +100,12 @@ def import_api_checkpoint(
     source_id = writer.source_id(spec)
     stats = ImportStats(source=spec.key)
     seen: set[str] = set()
+    episode_bridge = (
+        AnimeSkipEpisodeBridge(anibridge, identities)
+        if source == "anime_skip" and anibridge is not None
+        else None
+    )
+    bridged_episodes: set[tuple[str, int]] = set()
 
     # Disallow normalization when a title contains conflicting Anime Skip
     # upstream episode UUIDs for the same purported numeric episode.
@@ -195,6 +204,8 @@ def import_api_checkpoint(
                 else upstream_episode_id or f"ep:{episode}"
             )
             candidate_episode_id = None
+            mapping_method = "verified-native-api"
+            bridge_proof = None
             normalized_episode_key = ""
             normalization_status = "source-only"
             normalization_reason = "Native episode cannot be independently normalized"
@@ -235,25 +246,80 @@ def import_api_checkpoint(
                 finally:
                     writer.conn.execute("RELEASE api_row")
             else:
-                # AniList per-season numbers are NOT necessarily MAL "ep:N".
-                # Only link to an episode already independently verified and
-                # indexed by the native AniList episode numbering.
+                # A season-local number is never assumed to be a MAL episode.
+                # Only independently indexed AniList episodes or a one-to-one
+                # AniBridge AniDB:R -> AniList+MAL proof may be normalized.
                 proven = bool(item.get("episode_identity_proven"))
-                if proven and len(episode_uuids[(native_id, episode)]) <= 1:
-                    result = writer.conn.execute(
-                        """SELECT episode_id FROM episode_ids
-                           WHERE anchor_id=? AND provider='anilist'
-                             AND scope='' AND episode_number_text=?""",
+                unambiguous_uuid = len(episode_uuids[(native_id, episode)]) <= 1
+                native_conflict = False
+                if proven and unambiguous_uuid:
+                    if episode_bridge is not None:
+                        bridge_proof = episode_bridge.resolve(
+                            native_id, anchor, episode
+                        )
+                    indexed = writer.conn.execute(
+                        """SELECT ei.episode_id, ep.episode_key
+                           FROM episode_ids ei
+                           JOIN episodes ep ON ep.id=ei.episode_id
+                           WHERE ei.anchor_id=? AND ei.provider='anilist'
+                             AND ei.scope='' AND ei.episode_number_text=?""",
                         (anchor, str(episode)),
                     ).fetchone()
-                    if result is not None:
-                        candidate_episode_id = int(result[0])
-                        key_row = writer.conn.execute(
-                            "SELECT episode_key FROM episodes WHERE id=?",
-                            (candidate_episode_id,),
-                        ).fetchone()
-                        if key_row:
-                            normalized_episode_key = key_row[0]
+                    if indexed is not None:
+                        indexed_episode, indexed_key = int(indexed[0]), str(indexed[1])
+                        if (
+                            bridge_proof is not None
+                            and indexed_key != bridge_proof.episode_key
+                        ):
+                            native_conflict = True
+                            normalization_reason = "AniBridge episode proof conflicts with native episode index"
+                            stats.ambiguous += 1
+                        else:
+                            candidate_episode_id = indexed_episode
+                            normalized_episode_key = indexed_key
+                    elif bridge_proof is not None:
+                        writer.conn.execute("SAVEPOINT api_bridge_episode")
+                        try:
+                            writer.get_or_create_title(anchor)
+                            candidate_episode_id = writer.get_or_create_episode(
+                                anchor,
+                                episode_key=bridge_proof.episode_key,
+                                episode_number=bridge_proof.mal_episode,
+                                duration_ms=duration,
+                            )
+                            writer.add_episode_id(
+                                episode_id=candidate_episode_id,
+                                anchor_id=anchor,
+                                provider="anilist",
+                                episode_number=episode,
+                            )
+                            writer.add_episode_id(
+                                episode_id=candidate_episode_id,
+                                anchor_id=anchor,
+                                provider="mal",
+                                episode_number=bridge_proof.mal_episode,
+                            )
+                            writer.add_episode_id(
+                                episode_id=candidate_episode_id,
+                                anchor_id=anchor,
+                                provider="anidb",
+                                scope="R",
+                                episode_number=bridge_proof.anidb_episode,
+                            )
+                        except (ValueError, IdentityConflict):
+                            writer.conn.execute("ROLLBACK TO api_bridge_episode")
+                            candidate_episode_id = None
+                            native_conflict = True
+                            stats.ambiguous += 1
+                            normalization_reason = "AniBridge episode proof conflicts with an existing episode"
+                        else:
+                            normalized_episode_key = bridge_proof.episode_key
+                        finally:
+                            writer.conn.execute("RELEASE api_bridge_episode")
+
+                    if candidate_episode_id is not None:
+                        writer.conn.execute("SAVEPOINT api_episode_ref")
+                        try:
                             writer.add_episode_ref(
                                 source_id,
                                 source_title_key=native_id,
@@ -261,14 +327,53 @@ def import_api_checkpoint(
                                 episode_id=candidate_episode_id,
                                 source_episode_number_text=str(episode),
                             )
+                        except (ValueError, IdentityConflict):
+                            writer.conn.execute("ROLLBACK TO api_episode_ref")
+                            candidate_episode_id = None
+                            native_conflict = True
+                            stats.ambiguous += 1
+                            normalization_reason = "Conflicting native episode UUID"
+                        finally:
+                            writer.conn.execute("RELEASE api_episode_ref")
+                if candidate_episode_id is not None and bridge_proof is not None:
+                    mapping_method = "exact-anibridge-api"
+                    if (native_id, episode) not in bridged_episodes:
+                        bridged_episodes.add((native_id, episode))
+                        stats.exact_episode_mappings += 1
+                    stats.runtime_segments_exact += 1
                 if candidate_episode_id is None:
-                    normalization_reason = "AniList episode number not independently linked to canonical episode"
+                    if not native_conflict:
+                        normalization_reason = (
+                            "AniList episode lacks independent episode identity"
+                        )
                     stats.unmapped += 1
 
             if candidate_episode_id is not None:
                 normalization_status = "mapped"
-                normalization_reason = "Verified native provider episode identity"
+                normalization_reason = (
+                    "Verified exact AniBridge AniDB:R to AniList/MAL episode mapping"
+                    if mapping_method == "exact-anibridge-api"
+                    else "Verified native provider episode identity"
+                )
                 stats.mapped += 1
+            evidence_metadata = {
+                "checkpoint_source": source,
+                "checked_at": str(record.get("checked_at") or ""),
+                "upstream_lineage": str(item.get("upstream_lineage") or ""),
+                "upstream_episode_id": upstream_episode_id,
+                "season": item.get("season"),
+                "absolute_number": item.get("absolute_number"),
+                "episode_identity_proven": item.get("episode_identity_proven"),
+                "consensus_eligible": consensus_eligible,
+            }
+            if candidate_episode_id is not None and bridge_proof is not None:
+                evidence_metadata["bridge_proof"] = {
+                    "method": "anibridge-anidb-r",
+                    "mal_id": bridge_proof.mal_id,
+                    "mal_episode": bridge_proof.mal_episode,
+                    "anidb_id": bridge_proof.anidb_id,
+                    "anidb_episode": bridge_proof.anidb_episode,
+                }
             record_id = writer.add_evidence_record(
                 snapshot_id=snapshot_id,
                 record_key=source_segment_id,
@@ -281,16 +386,7 @@ def import_api_checkpoint(
                 normalization_reason=normalization_reason,
                 normalized_anchor_id=anchor,
                 normalized_episode_key=normalized_episode_key,
-                metadata={
-                    "checkpoint_source": source,
-                    "checked_at": str(record.get("checked_at") or ""),
-                    "upstream_lineage": str(item.get("upstream_lineage") or ""),
-                    "upstream_episode_id": upstream_episode_id,
-                    "season": item.get("season"),
-                    "absolute_number": item.get("absolute_number"),
-                    "episode_identity_proven": item.get("episode_identity_proven"),
-                    "consensus_eligible": consensus_eligible,
-                },
+                metadata=evidence_metadata,
             )
             writer.add_evidence_segment(
                 record_id,
@@ -311,7 +407,7 @@ def import_api_checkpoint(
                     start_ms=start,
                     end_ms=end,
                     media_duration_ms=duration,
-                    mapping_method="verified-native-api",
+                    mapping_method=mapping_method,
                     consensus_eligible=consensus_eligible,
                 )
                 stats.runtime_segments += 1

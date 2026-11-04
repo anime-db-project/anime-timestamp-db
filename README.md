@@ -48,9 +48,13 @@ API snapshots can be **optionally imported** into `timestamps.db` and
 `timestamps-evidence.db` with fully attributed evidence and source lineages,
 deduplication, and conservative native episode matching. AniSkip CSV and
 API observations share a consensus lineage; unproven Anime Skip/AniList
-episode numbers remain source-only. **Automatic release import is enabled**:
-build and release workflows import API observations as soon as **both** durable
-source checkpoints exist and validate. Until then, they build from non-API
+episode numbers remain source-only. Where an explicit one-to-one AniBridge
+mapping independently proves a shared AniDB regular episode, AniList episode
+and MAL episode under one AMDB anchor, the builder may add a previously
+missing canonical episode or title. No numerical MAL/AniList guesswork,
+split/combined mappings or conflicting episode UUIDs are accepted.
+**Automatic release import is enabled**: build and release workflows import API
+observations as soon as **both** durable source checkpoints exist and validate. Until then, they build from non-API
 sources without partial imports. No Actions variable is required. This
 maintainer-selected publication setting does not independently grant a license
 from upstream providers.

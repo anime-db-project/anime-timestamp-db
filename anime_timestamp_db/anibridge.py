@@ -234,6 +234,58 @@ class AniBridgeIndex:
             int(episode),
         )
 
+    def resolve_anidb_regular_for_anilist(
+        self, anidb_id: str, anilist_id: str, episode: int
+    ) -> tuple[int, EpisodeMappingResult] | None:
+        """Invert only explicit 1:1 AniDB:R -> AniList episode mappings.
+
+        Reverse lookup is rejected when ranges overlap, are non-invertible,
+        or resolve a native target episode to more than one AniDB episode.
+        No MAL/AniList numeric equality or inferred season offset is assumed.
+        """
+        if episode < 1:
+            return None
+        bucket = self.payload.get(f"anidb:{anidb_id}:R")
+        if not isinstance(bucket, dict):
+            return None
+        target = bucket.get(f"anilist:{anilist_id}")
+        if not isinstance(target, dict):
+            return None
+
+        candidates: set[int] = set()
+        for raw_source_range, raw_target_spec in target.items():
+            source_range = parse_range(raw_source_range)
+            parsed = _parse_target_spec(str(raw_target_spec))
+            if source_range is None or parsed is None:
+                continue
+            target_ranges, ratio = parsed
+            if ratio is not None:
+                continue
+            offset = 0
+            for target_range in target_ranges:
+                if target_range.contains(episode):
+                    candidate = (
+                        source_range.start + offset + episode - target_range.start
+                    )
+                    if source_range.contains(candidate):
+                        candidates.add(candidate)
+                if target_range.length is None:
+                    break
+                offset += target_range.length
+        if len(candidates) != 1:
+            return None
+        native_episode = next(iter(candidates))
+        result = self.resolve_anidb_episode(anidb_id, native_episode, scope="R")
+        if not any(
+            target.descriptor.provider == "anilist"
+            and target.descriptor.external_id == str(anilist_id)
+            and target.descriptor.scope is None
+            and target.episode_number == episode
+            for target in result.targets
+        ):
+            return None
+        return native_episode, result
+
     def resolve_movie_from(
         self,
         source_provider: str,
