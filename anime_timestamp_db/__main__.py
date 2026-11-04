@@ -91,6 +91,20 @@ def build_parser() -> argparse.ArgumentParser:
     source_lookup.add_argument("--episode-key", required=True)
     source_lookup.add_argument("--title-key", default="")
 
+    source_anchor = subparsers.add_parser(
+        "source-anchor",
+        help="Look up unresolved source-native timestamps via proven AMDB title",
+    )
+    source_anchor.add_argument("--db", type=Path, required=True)
+    source_anchor.add_argument("--anchor", required=True)
+    source_anchor.add_argument("--source")
+    source_anchor.add_argument("--episode-key")
+    source_anchor.add_argument(
+        "--title-refs",
+        action="store_true",
+        help="Return linked native source title references instead of segments",
+    )
+
     subparsers.add_parser("schema-version", help="Print schema version")
     return parser
 
@@ -154,6 +168,19 @@ def main(argv: list[str] | None = None) -> int:
             args.source,
             args.episode_key,
             source_title_key=args.title_key,
+        )
+        print(_json([asdict(row) for row in rows]))
+        return 0
+    if args.command == "source-anchor":
+        resolver = TimestampResolver(args.db)
+        rows = (
+            resolver.get_source_title_refs_by_anchor(args.anchor)
+            if args.title_refs
+            else resolver.get_source_segments_by_anchor(
+                args.anchor,
+                source=args.source,
+                source_episode_key=args.episode_key,
+            )
         )
         print(_json([asdict(row) for row in rows]))
         return 0

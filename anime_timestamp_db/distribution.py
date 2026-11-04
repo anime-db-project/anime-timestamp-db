@@ -13,6 +13,7 @@ _RUNTIME_TABLES = (
     "sources",
     "lineages",
     "titles",
+    "source_title_refs",
     "episodes",
     "episode_ids",
     "episode_refs",
@@ -107,6 +108,17 @@ def compact_runtime_database(source: Path, destination: Path) -> None:
                 anchor_id INTEGER PRIMARY KEY CHECK(anchor_id > 0),
                 display_title TEXT NOT NULL DEFAULT ''
             );
+
+            CREATE TABLE source_title_refs (
+                source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+                source_title_key TEXT NOT NULL,
+                anchor_id INTEGER NOT NULL REFERENCES titles(anchor_id) ON DELETE CASCADE,
+                identity_method TEXT NOT NULL,
+                PRIMARY KEY(source_id, source_title_key)
+            ) WITHOUT ROWID;
+
+            CREATE INDEX source_title_refs_anchor_idx
+                ON source_title_refs(anchor_id, source_id, source_title_key);
 
             CREATE TABLE episodes (
                 id INTEGER PRIMARY KEY,

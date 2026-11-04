@@ -1,8 +1,8 @@
-# Schema v5
+# Schema v6
 
-Schema v5 makes Anime Mapping DB's stable `amdb:<anchor_id>` the cross-project title identity. The timestamp database no longer copies MAL, AniList, AniDB, Kitsu, TVDB, TMDB, IMDb, or other title aliases into its own runtime tables.
+Schema v6 retains Anime Mapping DB's stable `amdb:<anchor_id>` as the cross-project identity and adds a compact `source_title_refs` table for **independently verified title-only links**. The timestamp database still never duplicates MAL, AniList, AniDB, Kitsu, TVDB, TMDB, IMDb, or other generic mapping aliases.
 
-This is a breaking SQLite schema change from v4. It intentionally removes duplicated title-mapping data while keeping provider-specific **episode numbering** where that numbering is independently proven.
+Schema v6 extends v5. A source may now contribute a proven AMDB title and unresolved source-native episode timings without fabricating a canonical episode. The v5-to-v6 SQLite table contract is a schema change; clients checking the exact schema version must update.
 
 `schema_version` changes when the SQLite table/column contract changes. Builder-only behavior is versioned separately through `build_format_version`.
 
@@ -43,9 +43,19 @@ titles
   display_title TEXT
 ```
 
-A runtime title is directly keyed by Anime Mapping DB's stable numeric anchor. The public representation is `amdb:<anchor_id>`.
+A runtime title is directly keyed by Anime Mapping DB's stable numeric anchor. The public representation is `amdb:<anchor_id>`. Titles can exist without any canonical episodes when a source's title ID is proven but episode numbering remains unresolved.
 
-There is deliberately no `title_ids` table in schema v5. External title aliases belong to Anime Mapping DB.
+There is deliberately no `title_ids` table in schema v6. External title aliases belong to Anime Mapping DB.
+
+### `source_title_refs`
+
+A small, audited link from a **source-native** title key to the proven AMDB anchor:
+
+```text
+source_id + source_title_key -> anchor_id + identity_method
+```
+
+`source_title_key` remains necessary to look up unresolved `source_segments`; `identity_method` records the independent proof (for example `exact-anilist-id`). This is not a second global provider-alias database. Each `(source_id, source_title_key)` has at most one AMDB anchor; changing it to a different anchor raises an identity conflict. A title may have no normalized `episodes` if all its source timings are still unresolved.
 
 ### `episodes`
 
@@ -107,7 +117,7 @@ Approved observations normalized to an AMDB title and concrete episode. Each row
 
 Valid ranges whose exact cross-database episode identity cannot be proven safely. Examples include Baha `videoSn` and unresolved but still useful source-native episodes.
 
-The builder prefers retaining a valid observation here over inventing an AMDB episode identity.
+The builder prefers retaining a valid observation here over inventing an AMDB episode identity. A source-native title with a verified `source_title_refs` entry can be queried by AMDB anchor via `TimestampResolver.get_source_segments_by_anchor()` and `source-anchor --anchor amdb:N`. The native source episode key is preserved; these ranges do not join the canonical `segments` or consensus until a separate episode proof exists.
 
 ### `consensus_segments` / `consensus_members`
 
@@ -232,7 +242,8 @@ This separation keeps the timestamp artifact smaller and gives every anime-db-pr
 
 A valid runtime/evidence pair requires:
 
-- matching schema v5 metadata and `PRAGMA user_version`;
+- matching schema v6 metadata and `PRAGMA user_version`;
+- valid source-title reference foreign keys and no disagreement with independently mapped episode references;
 - SQLite integrity success;
 - zero foreign-key errors;
 - no invalid timestamp ranges;
@@ -250,3 +261,4 @@ Exact counts are snapshot-dependent and live in `manifest.json` and `audit.json`
 - v3: segment-level mapping method/confidence.
 - v4: explicit consensus eligibility for aggregator-safe voting.
 - v5: stable AMDB anchor title identity; removes copied `title_ids`, removes duplicated provider title IDs from `episode_ids`, and replaces normalized provider title columns in evidence with `normalized_anchor_id`.
+- v6: adds `source_title_refs` for stable source-native title links, supporting title-only AMDB rows and AMDB-based lookup of unresolved source-native episode segments.

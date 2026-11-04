@@ -312,7 +312,17 @@ class ApiImportTests(unittest.TestCase):
             self.assertEqual(result.source_only_segments, 1)
             self.assertEqual(result.runtime_segments, 0)
             self.assertEqual(
-                writer.conn.execute("SELECT count(*) FROM titles").fetchone()[0], 0
+                writer.conn.execute("SELECT count(*) FROM titles").fetchone()[0], 1
+            )
+            self.assertEqual(
+                writer.conn.execute("SELECT count(*) FROM episodes").fetchone()[0], 0
+            )
+            self.assertEqual(
+                writer.conn.execute(
+                    "SELECT source_title_key, anchor_id, identity_method"
+                    " FROM source_title_refs"
+                ).fetchall(),
+                [("9253", 101, "exact-anilist-id")],
             )
 
     def test_anime_skip_bridge_conflicting_uuids_stay_source_only(self) -> None:

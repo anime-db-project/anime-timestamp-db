@@ -50,6 +50,13 @@ class SourceSegment:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceTitleReference:
+    source: str
+    source_title_key: str
+    identity_method: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConsensusSegment:
     segment_type: str
     cluster_index: int
@@ -365,6 +372,92 @@ class TimestampResolver:
             episode_key,
             media_duration_ms=media_duration_ms,
         )
+
+    def get_source_title_refs_by_anchor(
+        self, anchor: int | str
+    ) -> list[SourceTitleReference]:
+        """Show which native source title IDs have proven AMDB identity."""
+        anchor_id = self._anchor_id(anchor)
+        if anchor_id is None:
+            return []
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT src.source_key, tr.source_title_key, tr.identity_method
+                FROM source_title_refs AS tr
+                JOIN sources AS src ON src.id=tr.source_id
+                WHERE tr.anchor_id=?
+                ORDER BY src.source_key, tr.source_title_key
+                """,
+                (anchor_id,),
+            )
+            return [
+                SourceTitleReference(
+                    source=str(row[0]),
+                    source_title_key=str(row[1]),
+                    identity_method=str(row[2]),
+                )
+                for row in rows
+            ]
+
+    def get_source_segments_by_anchor(
+        self,
+        anchor: int | str,
+        *,
+        source: str | None = None,
+        source_episode_key: str | None = None,
+    ) -> list[SourceSegment]:
+        """Fetch source-native ranges without fabricating canonical episodes.
+
+        This is intentionally separate from get_segments_by_anchor: even
+        proven title identity does not prove a MAL/AniList episode identity.
+        """
+        anchor_id = self._anchor_id(anchor)
+        if anchor_id is None:
+            return []
+        filters = ["tr.anchor_id=?"]
+        params: list[object] = [anchor_id]
+        if source is not None:
+            filters.append("src.source_key=?")
+            params.append(str(source).strip().casefold())
+        if source_episode_key is not None:
+            filters.append("ss.source_episode_key=?")
+            params.append(str(source_episode_key))
+        where = " AND ".join(filters)
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT ss.segment_type, ss.start_ms, ss.end_ms,
+                       src.source_key, lin.lineage_key, ss.source_title_key,
+                       ss.source_episode_key, ss.source_segment_id,
+                       ss.media_duration_ms
+                FROM source_segments AS ss
+                JOIN source_title_refs AS tr
+                  ON tr.source_id=ss.source_id
+                 AND tr.source_title_key=ss.source_title_key
+                JOIN sources AS src ON src.id=ss.source_id
+                JOIN lineages AS lin ON lin.id=ss.lineage_id
+                WHERE {where}
+                ORDER BY src.source_key, ss.source_title_key,
+                         ss.source_episode_key, ss.start_ms,
+                         ss.end_ms, ss.segment_type
+                """,
+                tuple(params),
+            )
+            return [
+                SourceSegment(
+                    segment_type=str(row[0]),
+                    start_ms=int(row[1]),
+                    end_ms=int(row[2]),
+                    source=str(row[3]),
+                    lineage=str(row[4]),
+                    source_title_key=str(row[5]),
+                    source_episode_key=str(row[6]),
+                    source_segment_id=str(row[7]),
+                    media_duration_ms=int(row[8]) if row[8] is not None else None,
+                )
+                for row in rows
+            ]
 
     def get_source_segments(
         self,

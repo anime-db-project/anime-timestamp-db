@@ -133,6 +133,7 @@ def inspect_database(path: Path) -> dict[str, Any]:
                 "sources",
                 "lineages",
                 "titles",
+                "source_title_refs",
                 "episodes",
                 "episode_ids",
                 "episode_refs",
@@ -505,6 +506,43 @@ class DatabaseWriter:
             ) VALUES (?, ?, ?, ?, ?)
             """,
             (anchor, normalized_provider, normalized_scope, number_text, episode_id),
+        )
+
+    def add_source_title_ref(
+        self,
+        *,
+        source_id: int,
+        source_title_key: str,
+        anchor_id: int,
+        identity_method: str,
+    ) -> None:
+        """Register a proven *title* without claiming any episode identity."""
+        native_key = str(source_title_key).strip()
+        method = str(identity_method).strip()
+        if not native_key or not method:
+            raise ValueError("source title reference needs native key and proof method")
+        anchor = int(anchor_id)
+        if anchor <= 0:
+            raise ValueError("source title reference needs a positive AMDB anchor")
+        self.get_or_create_title(anchor)
+        previous = self.conn.execute(
+            """
+            SELECT anchor_id FROM source_title_refs
+            WHERE source_id=? AND source_title_key=?
+            """,
+            (source_id, native_key),
+        ).fetchone()
+        if previous is not None and int(previous[0]) != anchor:
+            raise IdentityConflict(
+                f"source title {source_id}:{native_key} resolves to multiple AMDB anchors"
+            )
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO source_title_refs(
+                source_id, source_title_key, anchor_id, identity_method
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (source_id, native_key, anchor, method),
         )
 
     def add_segment(

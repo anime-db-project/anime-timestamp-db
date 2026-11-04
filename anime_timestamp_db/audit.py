@@ -68,6 +68,40 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             WHERE movie.episode_key='movie'
             """,
         )
+        source_title_ref_mismatches = _scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM source_title_refs AS tr
+            JOIN episode_refs AS er
+              ON er.source_id=tr.source_id
+             AND er.source_title_key=tr.source_title_key
+            JOIN episodes AS ep ON ep.id=er.episode_id
+            WHERE tr.anchor_id <> ep.anchor_id
+            """,
+        )
+        title_only_titles = _scalar(
+            conn,
+            """
+            SELECT COUNT(*) FROM titles AS t
+            WHERE EXISTS (
+                SELECT 1 FROM source_title_refs AS tr
+                WHERE tr.anchor_id=t.anchor_id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM episodes AS ep WHERE ep.anchor_id=t.anchor_id
+            )
+            """,
+        )
+        linked_source_segments = _scalar(
+            conn,
+            """
+            SELECT COUNT(*) FROM source_segments AS ss
+            JOIN source_title_refs AS tr
+              ON tr.source_id=ss.source_id
+             AND tr.source_title_key=ss.source_title_key
+            """,
+        )
         provider_episode_identity_errors = _scalar(
             conn,
             """
@@ -83,6 +117,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
                 "sources",
                 "lineages",
                 "titles",
+                "source_title_refs",
                 "episodes",
                 "episode_ids",
                 "episode_refs",
@@ -103,7 +138,31 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             "orphan_episodes": orphan_episodes,
             "duplicate_movie_episode_aliases": duplicate_movie_episode_aliases,
             "provider_episode_identity_errors": provider_episode_identity_errors,
+            "source_title_ref_mismatches": source_title_ref_mismatches,
+            "title_only_titles": title_only_titles,
+            "linked_source_segments": linked_source_segments,
             "counts": counts,
+            "source_title_refs_by_source": count_by(
+                conn,
+                """
+                SELECT src.source_key, COUNT(*)
+                FROM source_title_refs AS tr
+                JOIN sources AS src ON src.id=tr.source_id
+                GROUP BY src.source_key ORDER BY src.source_key
+                """,
+            ),
+            "linked_source_segments_by_source": count_by(
+                conn,
+                """
+                SELECT src.source_key, COUNT(*)
+                FROM source_segments AS ss
+                JOIN source_title_refs AS tr
+                  ON tr.source_id=ss.source_id
+                 AND tr.source_title_key=ss.source_title_key
+                JOIN sources AS src ON src.id=ss.source_id
+                GROUP BY src.source_key ORDER BY src.source_key
+                """,
+            ),
             "segments_by_source": count_by(
                 conn,
                 """
@@ -146,6 +205,7 @@ def audit_runtime(path: Path) -> dict[str, Any]:
             and orphan_episodes == 0
             and duplicate_movie_episode_aliases == 0
             and provider_episode_identity_errors == 0
+            and source_title_ref_mismatches == 0
             and counts["segments"] > 0
             and counts["source_segments"] > 0
         )

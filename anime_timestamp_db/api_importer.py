@@ -177,6 +177,19 @@ def import_api_checkpoint(
                 stats.invalid += 1
                 continue
 
+            # Proven native title identity is independent of episode identity.
+            # Keep all valid source-native observations linked to the AMDB
+            # title, even when no safe normalized episode can be constructed.
+            if anchor is not None:
+                writer.add_source_title_ref(
+                    source_id=source_id,
+                    source_title_key=native_id,
+                    anchor_id=anchor,
+                    identity_method=(
+                        "exact-mal-id" if source == "aniskip" else "exact-anilist-id"
+                    ),
+                )
+
             upstream_episode_id = str(item.get("upstream_episode_id") or "")
             seg_uuid = str(item.get("source_segment_id") or "")
             if not seg_uuid:

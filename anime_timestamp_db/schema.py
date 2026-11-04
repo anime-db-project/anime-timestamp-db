@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 DEFAULT_RUNTIME_DB_NAME = "timestamps.db"
 DEFAULT_EVIDENCE_DB_NAME = "timestamps-evidence.db"
 
@@ -32,6 +32,20 @@ CREATE TABLE titles (
     anchor_id INTEGER PRIMARY KEY CHECK(anchor_id > 0),
     display_title TEXT NOT NULL DEFAULT ''
 );
+
+-- Source-native title identity is retained only for proven data sources,
+-- not a copied list of Anime Mapping DB provider aliases. This lets a
+-- known AMDB title own unresolved per-source episodes without fake ep:N IDs.
+CREATE TABLE source_title_refs (
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    source_title_key TEXT NOT NULL,
+    anchor_id INTEGER NOT NULL REFERENCES titles(anchor_id) ON DELETE CASCADE,
+    identity_method TEXT NOT NULL,
+    PRIMARY KEY(source_id, source_title_key)
+) WITHOUT ROWID;
+
+CREATE INDEX source_title_refs_anchor_idx
+    ON source_title_refs(anchor_id, source_id, source_title_key);
 
 CREATE TABLE episodes (
     id INTEGER PRIMARY KEY,

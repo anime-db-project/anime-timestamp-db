@@ -131,6 +131,7 @@ collected before the durable-store upgrade.
   Accepted bridge observations are tagged `exact-anibridge-api`; their exact
   AniDB, MAL and AniList evidence is included in the record metadata.
 - Unknown upstream lineages are preserved but are **consensus-ineligible**.
+- The importer creates AMDB `titles` and `source_title_refs` whenever a valid API observation's **title** identity is accepted, even if its episode cannot be independently verified. `source_segments` can therefore be found via AMDB title ID without creating fake `ep:N` rows. The separate `source-anchor` command supports review and client integration.
 - The catalog excludes a provider ID shared by multiple AMDB anchors; export
   rejects mismatched checkpoint episode keys and non-positive source records.
   Neither case may silently attribute observations to the wrong anime.

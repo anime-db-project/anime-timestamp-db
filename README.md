@@ -10,7 +10,7 @@
 
 **Anime Timestamp DB** builds an auditable SQLite database of anime episode skip segments: openings, endings, recaps, previews, and other ranges.
 
-It is the timestamp counterpart to [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db). Schema v5 uses Anime Mapping DB's stable `amdb:<anchor_id>` as the shared title identity instead of duplicating MAL, AniList, AniDB, Kitsu, IMDb, TVDB, TMDB, and other title aliases inside the timestamp database.
+It is the timestamp counterpart to [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db). Schema v6 uses Anime Mapping DB's stable `amdb:<anchor_id>` as the shared title identity instead of duplicating MAL, AniList, AniDB, Kitsu, IMDb, TVDB, TMDB, and other title aliases inside the timestamp database.
 
 ## Real data inputs
 
@@ -66,7 +66,7 @@ the private `ANIME_SKIP_CLIENT_ID` Actions secret.
 
 Open Anime Timestamps currently declares no explicit repository/data license. The build attributes it, preserves exact snapshot provenance, and includes `OPEN_ANIME_TIMESTAMPS_NOTICE.md` without inventing a license.
 
-## Schema v5 identity model
+## Schema v6: two levels of identity
 
 The core relationship is intentionally simple:
 
@@ -89,7 +89,7 @@ anchor_id + provider + scope + episode_number -> episode_id
 
 It does not repeat the provider's title ID. That title ID remains in Anime Mapping DB and is checked there during the build.
 
-Source-native identifiers still appear in `episode_refs`, `source_segments`, and evidence where they are necessary for provenance. They are not treated as a second title identity system.
+Source-native identifiers also appear in `source_title_refs`, `episode_refs`, `source_segments`, and evidence where provenance requires them. The small `source_title_refs` table links an independently verified source-native title key to an AMDB anchor; it does **not** copy the mapping database's global alias graph or claim equivalence between different episode numbering systems.
 
 See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full contract.
 
@@ -104,12 +104,13 @@ See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full contract.
 
 Important runtime tables:
 
-- `titles`: AMDB anchor identities;
+- `titles`: AMDB anchor identities, including titles with only source-native episodes;
+- `source_title_refs`: exact native-source title keys that resolve to those AMDB anchors (even when episode identity is unresolved);
 - `episodes`: normalized playback units under an anchor;
 - `episode_ids`: independently proven provider episode numbering/scopes;
 - `episode_refs`: timestamp-source episode references;
 - `segments`: normalized source observations;
-- `source_segments`: unresolved but still queryable source-native ranges;
+- `source_segments`: unresolved but still queryable source-native ranges; use `source-anchor` or `TimestampResolver.get_source_segments_by_anchor()` to find these via the AMDB title ID, without inventing canonical episode keys;
 - `consensus_segments`, `consensus_members`: derived best ranges with exact membership traceability;
 - `sources`, `lineages`: source provenance and independent evidence lineage.
 
@@ -174,9 +175,9 @@ The builder performed **663,497** AMDB identity lookups during the validation bu
 
 Counts are snapshot-dependent. The authoritative numbers for an artifact are always its `manifest.json` and `audit.json`.
 
-## Size impact of schema v5 and compact-v1
+## Size impact of schema v6 and compact-v1
 
-Schema v5 first removed the duplicated cross-provider title alias layer. Build format v9 now adds a second, independent optimization: the strict staging databases are fully audited first, then losslessly materialized into a read-optimized `compact-v1` distribution layout. The logical schema remains v5.
+Schema v5 removed the duplicated cross-provider title alias layer. Schema v6 adds only compact, explicitly proven native-source title references (not global aliases). The strict staging databases are fully audited before lossless materialization into the read-optimized `compact-v1` distribution layout. The logical table contract is now v6.
 
 On the same validated source snapshot:
 
