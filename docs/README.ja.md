@@ -7,29 +7,58 @@
 # anime-timestamp-db
 
 [![CI](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml)
-[![Database build](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
+[![Releases](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml)
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Code license](https://img.shields.io/badge/Code-Apache%202.0-D22128.svg)](../LICENSE)
 [![Data license](https://img.shields.io/badge/Data-ODbL%201.0%20%2B%20upstream%20terms-555555.svg)](../DATA_LICENSE.md)
 
 アニメの OP、ED、回想、予告などのスキップ区間を、出典を追跡できる SQLite データとして構築する独立したプロジェクトです。
 
+<!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## データベースの収録状況
 
-検証済みリリースには **57,623話**、**214,241件の正規化区間**、**125,085件の合意区間**が含まれます。これらは別の指標であり、足し合わせて作品数やシーン数とすることはできません。
+**正規化 57,623話 · 区間 214,241件 · 合意区間 125,085件**
+
+各値は別の指標で、作品や場面の合計にはできません。ソース固有の区間は検索できますが正規化話数には含みません。
 
 | 指標 | 値 |
 | --- | ---: |
-| AMDB ID が確認された作品 | **4,340** |
-| 正規化されたエピソード | **57,623** |
-| 正規化された区間の観測 | **214,241** |
-| ソース ID のみで参照できる区間 | **44,646** |
+| タイムスタンプのある AMDB 作品 | **4,340** |
+| 正規化された話数 | **57,623** |
+| 正規化された区間 | **214,241** |
+| ソース固有の未解決区間 | **44,646** |
 | 合意区間 | **125,085** |
-| 合意区間と元データの結び付き | **184,429** |
+| 合意の根拠リンク | **184,429** |
 | 証拠レコード | **299,537** |
-| 取得した元データのスナップショット | **8** |
+| 元データスナップショット | **8** |
+| SQLite サイズ | **52.5 MiB** |
+| 圧縮 SQLite サイズ | **14.1 MiB** |
 
-**2026年11月5日** の [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8) の値です。最新の数値は [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) と [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json) を参照してください。未解決の区間は検索できますが、確認済みエピソード数には含みません。
+### ローカル検索性能
+
+**元ソース区間**
+
+| 指標 | 値 |
+| --- | ---: |
+| 中央値 | **0.853 ms** |
+| p95 | **1.099 ms** |
+| p99 | **1.146 ms** |
+| 逐次検索/秒 | **1,167** |
+
+**合意区間**
+
+| 指標 | 値 |
+| --- | ---: |
+| 中央値 | **0.627 ms** |
+| p95 | **0.874 ms** |
+| p99 | **0.948 ms** |
+| 逐次検索/秒 | **1,510** |
+
+リリース SQLite へのキャッシュ済み逐次読み取り、Linux / Python 3.12。180話 × 2回。ネットワーク API の遅延ではありません。
+
+リリース時点: **2026-11-05**, [v2026.11.05.8](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). [最新マニフェスト](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+
+<!-- END AUTO-GENERATED DATABASE STATS -->
 
 ## 主な機能
 
@@ -250,16 +279,15 @@ anime-timestamp-db build \
 
 ## データベースとリリース
 
-通常のビルドは GitHub Actions のアーティファクトを公開します。タグまたは手動操作で Releases を発行します。`timestamps.db`、`timestamps-evidence.db`、圧縮版、`manifest.json`、`audit.json`、`SHA256SUMS`、通知ファイルを含みます。
+配布ファイルはタグまたは手動リリースによる GitHub Releases に公開します。`timestamps.db`、`timestamps-evidence.db`、圧縮版、`manifest.json`、`audit.json`、`performance.json`、`SHA256SUMS`、出典通知を含みます。
 
-- [Database build artifacts](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
 - [Releases](https://github.com/anime-db-project/anime-timestamp-db/releases)
 
 このプロジェクトは **anime-db-bot** とは独立しており、ボットの必須依存ではありません。統合・再配布前にスキーマ、収録範囲、元データの規約を確認してください。
 
 ## 配布ファイル
 
-通常の GitHub Actions は一時アーティファクト、タグや手動実行は永続的 Releases を生成します。実行用 DB と証拠 DB は分離しています。`manifest.json` に元データ、マッピング DB の指紋、スキーマ、サイズを記録し、`audit.json` に監査結果を保存します。
+配布には GitHub Releases を利用してください。実行用 SQLite と証拠データは分離されます。`manifest.json` に元データ、マッピングの指紋、スキーマ、サイズを記録し、`audit.json` に検証、`performance.json` にローカル検索の測定結果を保存します。
 
 | テーブルまたはファイル | 役割 |
 | --- | --- |

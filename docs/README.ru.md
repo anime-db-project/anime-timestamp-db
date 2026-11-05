@@ -7,29 +7,58 @@
 # anime-timestamp-db
 
 [![CI](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml)
-[![Database build](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
+[![Releases](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml)
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Code license](https://img.shields.io/badge/Code-Apache%202.0-D22128.svg)](../LICENSE)
 [![Data license](https://img.shields.io/badge/Data-ODbL%201.0%20%2B%20upstream%20terms-555555.svg)](../DATA_LICENSE.md)
 
 Самостоятельный инструмент и база SQLite с интервалами пропуска в сериях аниме: опенинги, эндинги, рекапы, превью и другие сегменты, с проверяемым происхождением записей.
 
+<!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Статистика базы таймкодов
 
-**57 623 нормализованные серии**, **214 241 сопоставленный таймкод** и **125 085 консенсусных интервалов** в проверенном релизе. Это разные показатели: их нельзя складывать и трактовать как количество уникальных аниме или сцен.
+**57,623 нормализованных серий · 214,241 сопоставленных интервалов · 125,085 консенсусных интервалов**
+
+Это разные показатели, их нельзя складывать как количество тайтлов или сцен. Интервалы без подтверждённого номера серии доступны по исходным ID, но не входят в число нормализованных эпизодов.
 
 | Показатель | Значение |
 | --- | ---: |
-| Тайтлы с подтверждённым AMDB ID в runtime-базе | **4,340** |
+| Тайтлы с таймкодами и AMDB ID | **4,340** |
 | Нормализованные серии | **57,623** |
-| Сопоставленные исходные интервалы | **214,241** |
-| Таймкоды, доступные только по ID источника | **44,646** |
-| Результирующие консенсусные интервалы | **125,085** |
-| Связи консенсуса с исходными наблюдениями | **184,429** |
-| Записи базы доказательств | **299,537** |
-| Снимки исходных наборов | **8** |
+| Сопоставленные интервалы | **214,241** |
+| Source-only интервалы | **44,646** |
+| Консенсусные интервалы | **125,085** |
+| Связи консенсуса с evidence | **184,429** |
+| Записи evidence | **299,537** |
+| Снимки источников | **8** |
+| Размер SQLite | **52.5 MiB** |
+| Размер сжатой SQLite | **14.1 MiB** |
 
-Снимок от **5 ноября 2026 года**, релиз [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). Значения не обновляются в README автоматически: свежие цифры находятся в [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) и [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json). Source-only интервалы доступны для поиска, но **не** считаются подтверждёнными нормализованными сериями.
+### Скорость локального получения таймкодов
+
+**Исходные интервалы**
+
+| Показатель | Значение |
+| --- | ---: |
+| Медиана | **0.853 ms** |
+| p95 | **1.099 ms** |
+| p99 | **1.146 ms** |
+| Последовательные запросы/с | **1,167** |
+
+**Консенсусные интервалы**
+
+| Показатель | Значение |
+| --- | ---: |
+| Медиана | **0.627 ms** |
+| p95 | **0.874 ms** |
+| p99 | **0.948 ms** |
+| Последовательные запросы/с | **1,510** |
+
+Последовательные запросы к релизной SQLite с прогретым кэшем, Linux / Python 3.12; 180 серий × 2 повторения. Показатели не измеряют сетевую задержку API.
+
+Снимок релиза: **2026-11-05**, [v2026.11.05.8](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). [Актуальный манифест](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+
+<!-- END AUTO-GENERATED DATABASE STATS -->
 
 ## Возможности
 
@@ -250,16 +279,15 @@ anime-timestamp-db build \
 
 ## Базы данных и релизы
 
-Обычные сборки публикуют артефакты GitHub Actions; релизы создаются по тегу или вручную. Пакет содержит `timestamps.db`, `timestamps-evidence.db`, сжатые копии, `manifest.json`, `audit.json`, `SHA256SUMS` и обязательные уведомления.
+Постоянные файлы баз публикуются в GitHub Releases по тегам или вручную. Релиз содержит `timestamps.db`, `timestamps-evidence.db`, сжатые версии, `manifest.json`, `audit.json`, `performance.json`, `SHA256SUMS` и уведомления об источниках.
 
-- [Database build artifacts](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
 - [Releases](https://github.com/anime-db-project/anime-timestamp-db/releases)
 
 Проект независим от **anime-db-bot** и не является обязательной зависимостью бота. Перед интеграцией или распространением учитывайте покрытие источников, схему и условия использования данных.
 
 ## Файлы сборок и релизов
 
-Обычные сборки публикуют временные артефакты GitHub Actions; релизы по тегу и ручному запуску остаются в GitHub Releases. Runtime-база компактна, evidence хранится отдельно. `manifest.json` описывает входные данные, fingerprint mappings.db, схему, размер и сборку; `audit.json` — результаты проверок.
+Для скачивания используйте GitHub Releases. Компактная runtime-база распространяется отдельно от evidence. `manifest.json` содержит исходные версии, fingerprint mappings.db, схему и размеры; `audit.json` — проверки, а `performance.json` — замеры скорости локальных запросов.
 
 | Таблица или файл | Назначение |
 | --- | --- |

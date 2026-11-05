@@ -7,29 +7,58 @@
 # anime-timestamp-db
 
 [![CI](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/ci.yml)
-[![Database build](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
+[![Releases](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml/badge.svg)](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/release.yml)
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Code license](https://img.shields.io/badge/Code-Apache%202.0-D22128.svg)](../LICENSE)
 [![Data license](https://img.shields.io/badge/Data-ODbL%201.0%20%2B%20upstream%20terms-555555.svg)](../DATA_LICENSE.md)
 
 Ein eigenständiges SQLite-Projekt für überspringbare Anime-Segmente wie Openings, Endings, Rückblicke und Vorschauen mit nachvollziehbarer Datenherkunft.
 
+<!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Datenbank in Zahlen
 
-Der geprüfte Build enthält **57.623 normalisierte Folgen**, **214.241 zugeordnete Zeitintervalle** und **125.085 Konsensintervalle**. Diese unterschiedlichen Kennzahlen dürfen nicht als Zahl eindeutiger Anime oder Szenen addiert werden.
+**57,623 normalisierte Folgen · 214,241 zugeordnete Intervalle · 125,085 Konsensintervalle**
+
+Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene Bereiche bleiben abrufbar, gelten aber nicht als normalisierte Episoden.
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Titel mit bestätigter AMDB-Identität | **4,340** |
+| AMDB-Titel mit Zeitstempeln | **4,340** |
 | Normalisierte Folgen | **57,623** |
-| Normalisierte Quellintervalle | **214,241** |
-| Nur quellenspezifisch abrufbare Intervalle | **44,646** |
-| Abgeleitete Konsensintervalle | **125,085** |
+| Zugeordnete Intervalle | **214,241** |
+| Quelleneigene Intervalle | **44,646** |
+| Konsensintervalle | **125,085** |
 | Konsensmitgliedschaften | **184,429** |
 | Evidenzrecords | **299,537** |
 | Quell-Snapshots | **8** |
+| SQLite-Größe | **52.5 MiB** |
+| Komprimierte SQLite-Größe | **14.1 MiB** |
 
-Stand: **5. November 2026**, Release [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). Dies ist kein Live-Zähler. Aktuelle Daten stehen in [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) und [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json). Quelleneigene Intervalle zählen nicht als bestätigte normalisierte Folgen.
+### Lokale Abfrageleistung
+
+**Quellintervalle**
+
+| Kennzahl | Wert |
+| --- | ---: |
+| Median | **0.853 ms** |
+| p95 | **1.099 ms** |
+| p99 | **1.146 ms** |
+| Sequentielle Abfragen/s | **1,167** |
+
+**Konsensintervalle**
+
+| Kennzahl | Wert |
+| --- | ---: |
+| Median | **0.627 ms** |
+| p95 | **0.874 ms** |
+| p99 | **0.948 ms** |
+| Sequentielle Abfragen/s | **1,510** |
+
+Sequentielle Abfragen auf Release-SQLite mit warmem Cache, Linux / Python 3.12; 180 Folgen × 2 Runden. Keine API-/Netzwerklatenz.
+
+Release-Snapshot: **2026-11-05**, [v2026.11.05.8](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+
+<!-- END AUTO-GENERATED DATABASE STATS -->
 
 ## Funktionen
 
@@ -250,16 +279,15 @@ anime-timestamp-db build \
 
 ## Datenbanken und Releases
 
-Normale Builds veröffentlichen GitHub-Actions-Artefakte. Releases entstehen über Tags oder manuell. Enthalten sind `timestamps.db`, `timestamps-evidence.db`, komprimierte Versionen, `manifest.json`, `audit.json`, `SHA256SUMS` und Quellenhinweise.
+Dauerhafte Datenbank-Downloads werden in GitHub Releases (Tags oder manuell) veröffentlicht. Jedes Release enthält `timestamps.db`, `timestamps-evidence.db`, komprimierte Varianten, `manifest.json`, `audit.json`, `performance.json`, `SHA256SUMS` und Quellenhinweise.
 
-- [Database build artifacts](https://github.com/anime-db-project/anime-timestamp-db/actions/workflows/build.yml)
 - [Releases](https://github.com/anime-db-project/anime-timestamp-db/releases)
 
 Das Projekt ist von **anime-db-bot** unabhängig und keine erforderliche Bot-Abhängigkeit. Vor Integration oder Weitergabe sind Schema, Datenabdeckung und Quellbedingungen zu prüfen.
 
 ## Distributionsdateien
 
-Normale Workflows erzeugen befristete Actions-Artefakte; Tags oder manuelle Ausführung veröffentlichen dauerhafte Releases. Laufzeit- und Evidenzdaten sind getrennt. `manifest.json` dokumentiert Quellen, Mapping-Fingerprint, Schema und Größen; `audit.json` enthält Prüfberichte.
+GitHub Releases ist der empfohlene Download-Kanal. Runtime- und Evidenzdaten bleiben getrennt. `manifest.json` beschreibt Quellen, Mapping-Fingerprint, Schema und Größen; `audit.json` enthält Prüfungen und `performance.json` reproduzierbare lokale Abfragemessungen.
 
 | Tabelle oder Datei | Rolle |
 | --- | --- |
