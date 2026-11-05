@@ -28,6 +28,7 @@ on:
       - "scripts/crawl_external.py"
       - "scripts/external_sources.py"
       - "scripts/source_policies.py"
+      - "scripts/crawler_preflight.py"
       - "config/crawler_sources.json"
       - "scripts/checkpoint_store.py"
       - "scripts/bootstrap_progress.py"
@@ -57,13 +58,9 @@ jobs:
     env:
       ANIME_SKIP_CLIENT_ID: ${{ secrets.ANIME_SKIP_CLIENT_ID }}
       PUBLICMETADB_API_KEY: ${{ secrets.PUBLICMETADB_API_KEY }}
-      PUBLICMETADB_BULK_APPROVED: ${{ vars.PUBLICMETADB_BULK_APPROVED }}
-      THEINTRODB_BULK_APPROVED: ${{ vars.THEINTRODB_BULK_APPROVED }}
-      BULK_SOURCE_PERMISSION_INTRODB: ${{ vars.INTRODB_BULK_APPROVED }}
-      BULK_SOURCE_PERMISSION_INTROHATER: ${{ vars.INTROHATER_BULK_APPROVED }}
       SOURCE: ${{ matrix.source }}
       CRAWL_MODE: ${{ inputs.mode || 'maintenance' }}
-      REQUEST_LIMIT: ${{ github.event_name == 'push' && '2' || inputs.max_requests || '' }}
+      REQUEST_LIMIT: ${{ inputs.max_requests || '' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -74,35 +71,21 @@ jobs:
       - name: Install project
         run: python -m pip install -e .
 
-      - name: Check credentials and request budget
+      - name: Check source permission, credentials and request budget
         id: preflight
         shell: bash
         run: |
-          if [[ "$SOURCE" == "anime_skip" && -z "$ANIME_SKIP_CLIENT_ID" ]]; then
-            if [[ "$CRAWL_MODE" == "bootstrap" ]]; then
-              echo "Cannot bootstrap Anime Skip without ANIME_SKIP_CLIENT_ID." >&2
-              exit 1
-            fi
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Anime Skip skipped: set Actions secret ANIME_SKIP_CLIENT_ID." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$SOURCE" == "publicmetadb" && ( -z "$PUBLICMETADB_API_KEY" || "$PUBLICMETADB_BULK_APPROVED" != "true" ) ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "PublicMetaDB requires a provider key and confirmed bulk permissions." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$SOURCE" == "theintrodb" && "$THEINTRODB_BULK_APPROVED" != "true" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "TheIntroDB bulk collection/public redistribution requires operator clearance." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$SOURCE" == "introdb" && "$BULK_SOURCE_PERMISSION_INTRODB" != "true" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "IntroDB bulk extraction is prohibited without permission; attribution alone is not a license." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$SOURCE" == "introhater" && "$BULK_SOURCE_PERMISSION_INTROHATER" != "true" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "IntroHater automated scraping is prohibited without permission." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
+          # This reads the SAME config/crawler_sources.json that the crawler uses.
+          # A provider permitted by the operator must not be silently skipped
+          # by stale, undocumented Actions approval-variable gates.
+          python -m scripts.crawler_preflight \
+            --source "$SOURCE" \
+            --mode "$CRAWL_MODE" \
+            --github-output "$GITHUB_OUTPUT" \
+            --github-summary "$GITHUB_STEP_SUMMARY"
           if [[ -n "$REQUEST_LIMIT" ]]; then
             if [[ ! "$REQUEST_LIMIT" =~ ^[1-9][0-9]{0,3}$ ]] || (( REQUEST_LIMIT > 5000 )); then
-              echo "max_requests must be an integer between 1 and 5000" >&2
+              echo "::error::max_requests must be an integer between 1 and 5000"
               exit 1
             fi
           fi
@@ -171,7 +154,7 @@ jobs:
             "${budget_args[@]}"
 
       - name: Persist durable checkpoint (also after crawler failure)
-        if: always() && steps.preflight.outputs.enabled == 'true' && github.event_name != 'push'
+        if: always() && steps.preflight.outputs.enabled == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash

@@ -48,19 +48,29 @@ bootstrap chaining. A 403 is an access failure and is never retried.
 
 ## Authorization and automated workflows
 
-GitHub Actions uses a source matrix, but external API bulk jobs are
-**disabled unless the upstream permission and access conditions are met**:
+GitHub Actions uses the **same** `config/crawler_sources.json` as the
+crawler. Set `requires_bulk_permission: false` only after confirming that
+the project operator has the right to collect the selected provider's data.
+The old, separate `*_BULK_APPROVED` repository variables are no longer
+consulted: they previously caused the whole source to be silently skipped
+even when the config explicitly enabled crawling.
 
-| Source | Credential / repository variable |
+| Source | Required setup |
 | --- | --- |
-| TheIntroDB | `THEINTRODB_BULK_APPROVED=true` (variable) |
-| PublicMetaDB | `PUBLICMETADB_API_KEY` (secret) and `PUBLICMETADB_BULK_APPROVED=true` (variable) |
-| IntroDB | `INTRODB_BULK_APPROVED=true` (variable after permission) |
-| IntroHater | `INTROHATER_BULK_APPROVED=true` (variable after permission) |
+| TheIntroDB | Operator permission confirmed in source config |
+| PublicMetaDB | Operator permission confirmed in source config and Actions secret `PUBLICMETADB_API_KEY` |
+| IntroDB | Operator permission confirmed in source config (see upstream terms) |
+| IntroHater | Operator permission confirmed in source config (see upstream terms) |
 
-The two existing AniSkip/Anime Skip sources continue with their current
-workflow, while using their independent pacing settings. Secrets never
-enter the checkpoint/report.
+If PublicMetaDB is enabled but its API key is missing, preflight fails
+**visibly** instead of reporting a misleading successful crawl. Other
+providers marked as requiring permission emit an explicit warning and are
+skipped. GitHub Actions never prints API keys in reports or checkpoints.
+
+Push, scheduled and manually dispatched runs now use the source's normal
+per-run request quota by default (2,000 unless overridden) and persist their
+checkpoints; `--max-requests` can lower the budget on a manual run. The
+two existing AniSkip/Anime Skip sources retain the same bounded pacing.
 
 A small read-only test can be run with `--only-anchor` and
 `--max-requests 1`, subject to API terms. Test parsers and rate
