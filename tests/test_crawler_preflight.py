@@ -18,11 +18,15 @@ class PreflightTests(unittest.TestCase):
             with self.subTest(source=source):
                 enabled = {
                     **self.policies,
-                    source: replace(self.policies[source], requires_bulk_permission=False),
+                    source: replace(
+                        self.policies[source], requires_bulk_permission=False
+                    ),
                 }
                 blocked = {
                     **self.policies,
-                    source: replace(self.policies[source], requires_bulk_permission=True),
+                    source: replace(
+                        self.policies[source], requires_bulk_permission=True
+                    ),
                 }
                 self.assertTrue(decide(source, env={}, policies=enabled).enabled)
                 result = decide(source, env={}, policies=blocked)
@@ -30,7 +34,9 @@ class PreflightTests(unittest.TestCase):
                 self.assertFalse(result.fatal)
                 self.assertIn("requires upstream", result.reason)
 
-    def test_publicmetadb_needs_real_secret_not_obsolete_approval_variable(self) -> None:
+    def test_publicmetadb_needs_real_secret_not_obsolete_approval_variable(
+        self,
+    ) -> None:
         policies = {
             **self.policies,
             "publicmetadb": replace(

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from scripts.source_policies import SourcePolicy, load_policies
 
@@ -38,18 +38,21 @@ def decide(
     # It is not possible to obtain permission by adding a source credit.
     if policy.requires_bulk_permission:
         return PreflightDecision(
-            False, reason=f"{source}: requires upstream bulk-collection permission; "
-            "the source is disabled in config/crawler_sources.json"
+            False,
+            reason=f"{source}: requires upstream bulk-collection permission; "
+            "the source is disabled in config/crawler_sources.json",
         )
     if source == "publicmetadb" and not environ.get("PUBLICMETADB_API_KEY", "").strip():
         return PreflightDecision(
-            False, fatal=True,
+            False,
+            fatal=True,
             reason="PublicMetaDB is enabled but repository Actions secret "
             "PUBLICMETADB_API_KEY is missing",
         )
     if source == "anime_skip" and not environ.get("ANIME_SKIP_CLIENT_ID", "").strip():
         return PreflightDecision(
-            False, fatal=mode == "bootstrap",
+            False,
+            fatal=mode == "bootstrap",
             reason="Anime Skip requires Actions secret ANIME_SKIP_CLIENT_ID",
         )
     return PreflightDecision(True)
@@ -58,7 +61,9 @@ def decide(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", choices=tuple(load_policies()), required=True)
-    parser.add_argument("--mode", choices=("maintenance", "bootstrap"), default="maintenance")
+    parser.add_argument(
+        "--mode", choices=("maintenance", "bootstrap"), default="maintenance"
+    )
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--github-summary", type=Path)
     args = parser.parse_args(argv)
