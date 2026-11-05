@@ -54,8 +54,6 @@
 | p99 | **0.628 ms** |
 | 逐次検索/秒 | **1,818** |
 
-元データ取得と DB ビルド: **52 s**.
-
 リリース SQLite へのキャッシュ済み逐次読み取り、Linux / Python 3.12。250話 × 2回。ネットワーク API の遅延ではありません。
 
 リリース時点: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [最新マニフェスト](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

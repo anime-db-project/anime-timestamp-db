@@ -54,8 +54,6 @@ Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene B
 | p99 | **0.628 ms** |
 | Sequentielle Abfragen/s | **1,818** |
 
-Quellenbezug und DB-Aufbau: **52 s**.
-
 Sequentielle Abfragen auf Release-SQLite mit warmem Cache, Linux / Python 3.12; 250 Folgen × 2 Runden. Keine API-/Netzwerklatenz.
 
 Release-Snapshot: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

@@ -89,13 +89,11 @@ jobs:
           --github-output "$GITHUB_OUTPUT"
 
       - name: Build real-data databases
-        id: build
         if: steps.existing_release.outputs.exists != 'true'
         shell: bash
         env:
           API_IMPORT_READY: ${{ steps.api_import.outputs.enabled }}
         run: |
-          started=$(date +%s)
           flags=()
           if [[ "$API_IMPORT_READY" == "true" ]]; then
             flags+=(--api-checkpoint-dir api-checkpoints --allow-api-redistribution)
@@ -104,7 +102,6 @@ jobs:
             --output-dir artifacts \
             --cache-dir .build-cache/timestamp-sources \
             "${flags[@]}"
-          echo "seconds=$(($(date +%s) - started))" >> "$GITHUB_OUTPUT"
 
       - name: Audit generated databases
         if: steps.existing_release.outputs.exists != 'true'
@@ -181,7 +178,6 @@ jobs:
           python scripts/benchmark_lookup.py \
             --db artifacts/timestamps.db \
             --samples 250 --rounds 2 \
-            --build-seconds "${{ steps.build.outputs.seconds }}" \
             --output artifacts/performance.json
           (cd artifacts && sha256sum performance.json >> SHA256SUMS)
 

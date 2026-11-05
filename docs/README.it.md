@@ -54,8 +54,6 @@ Sono metriche diverse, da non sommare come titoli o scene. Gli intervalli nativi
 | p99 | **0.628 ms** |
 | Query sequenziali/s | **1,818** |
 
-Download sorgenti e build DB: **52 s**.
-
 Query sequenziali con cache calda sulla SQLite pubblicata, Linux / Python 3.12; 250 episodi × 2 round. Non misura la latenza API.
 
 Snapshot della release: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Manifest attuale](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

@@ -40,7 +40,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Source intervals",
         "cons": "Consensus intervals",
         "note": "Warm-cache sequential read-only queries on released SQLite, {environment}; {sampled} sampled episodes × {rounds} rounds. These are local lookup measurements, not network/API latency.",
-        "build": "Source download and database build",
         "snapshot": "Release snapshot",
         "latest": "Current release manifest",
         "pending": "No measured local benchmark is available for this snapshot.",
@@ -68,7 +67,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Исходные интервалы",
         "cons": "Консенсусные интервалы",
         "note": "Последовательные запросы к релизной SQLite с прогретым кэшем, {environment}; {sampled} серий × {rounds} повторения. Показатели не измеряют сетевую задержку API.",
-        "build": "Загрузка источников и сборка БД",
         "snapshot": "Снимок релиза",
         "latest": "Актуальный манифест",
         "pending": "Для этого снимка нет измеренного benchmark.",
@@ -96,7 +94,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "元ソース区間",
         "cons": "合意区間",
         "note": "リリース SQLite へのキャッシュ済み逐次読み取り、{environment}。{sampled}話 × {rounds}回。ネットワーク API の遅延ではありません。",
-        "build": "元データ取得と DB ビルド",
         "snapshot": "リリース時点",
         "latest": "最新マニフェスト",
         "pending": "このスナップショットの計測値はありません。",
@@ -124,7 +121,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Quellintervalle",
         "cons": "Konsensintervalle",
         "note": "Sequentielle Abfragen auf Release-SQLite mit warmem Cache, {environment}; {sampled} Folgen × {rounds} Runden. Keine API-/Netzwerklatenz.",
-        "build": "Quellenbezug und DB-Aufbau",
         "snapshot": "Release-Snapshot",
         "latest": "Aktuelles Manifest",
         "pending": "Keine Messdaten für diesen Snapshot vorhanden.",
@@ -152,7 +148,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Intervalos de origen",
         "cons": "Intervalos de consenso",
         "note": "Consultas secuenciales con caché caliente sobre SQLite publicada, {environment}; {sampled} episodios × {rounds} rondas. No representan latencia de red/API.",
-        "build": "Descarga de fuentes y generación",
         "snapshot": "Versión de referencia",
         "latest": "Manifiesto actual",
         "pending": "No hay resultados de benchmark para esta versión.",
@@ -180,7 +175,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Intervalles sources",
         "cons": "Intervalles de consensus",
         "note": "Lectures séquentielles sur SQLite publiée avec cache chaud, {environment} ; {sampled} épisodes × {rounds} tours. Ce n'est pas la latence réseau/API.",
-        "build": "Téléchargement et construction",
         "snapshot": "Instantané de version",
         "latest": "Manifeste actuel",
         "pending": "Aucun benchmark disponible pour cette version.",
@@ -208,7 +202,6 @@ WORDS: dict[str, dict[str, Any]] = {
         "source": "Intervalli delle fonti",
         "cons": "Intervalli di consenso",
         "note": "Query sequenziali con cache calda sulla SQLite pubblicata, {environment}; {sampled} episodi × {rounds} round. Non misura la latenza API.",
-        "build": "Download sorgenti e build DB",
         "snapshot": "Snapshot della release",
         "latest": "Manifest attuale",
         "pending": "Nessun benchmark disponibile per questa versione.",
@@ -294,10 +287,6 @@ def render_stats(
                 f"| {name} | **{value}** |"
                 for name, value in zip(labels, results, strict=True)
             )
-            lines.append("")
-        build = performance.get("build_seconds")
-        if build is not None:
-            lines.append(f"{t['build']}: **{int(build):,} s**.")
             lines.append("")
         lines.append(
             t["note"].format(

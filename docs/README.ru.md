@@ -54,8 +54,6 @@
 | p99 | **0.628 ms** |
 | Последовательные запросы/с | **1,818** |
 
-Загрузка источников и сборка БД: **52 s**.
-
 Последовательные запросы к релизной SQLite с прогретым кэшем, Linux / Python 3.12; 250 серий × 2 повторения. Показатели не измеряют сетевую задержку API.
 
 Снимок релиза: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Актуальный манифест](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

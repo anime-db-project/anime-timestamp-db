@@ -48,7 +48,6 @@ class TimestampReadmeStatisticsTests(unittest.TestCase):
             "sampled_episodes": 20,
             "rounds": 2,
             "environment": "Linux / Python 3.12",
-            "build_seconds": 400,
             "normalized_lookup": {
                 "median_ms": 0.42,
                 "p95_ms": 1.0,
@@ -77,6 +76,8 @@ class TimestampReadmeStatisticsTests(unittest.TestCase):
             self.assertIn(END, content)
             self.assertIn("**456**", content)
             self.assertIn("**0.420 ms**", content)
+            self.assertNotIn("database build:", content)
+            self.assertNotIn("Загрузка источников и сборка БД:", content)
             self.assertIn("Do not modify.", content)
             self.assertNotIn("Old stats", content)
         self.assertEqual(

@@ -54,8 +54,6 @@ These are separate metrics and must not be added as unique anime or scenes. Sour
 | p99 | **0.628 ms** |
 | Sequential queries/s | **1,818** |
 
-Source download and database build: **52 s**.
-
 Warm-cache sequential read-only queries on released SQLite, Linux / Python 3.12; 250 sampled episodes × 2 rounds. These are local lookup measurements, not network/API latency.
 
 Release snapshot: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Current release manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

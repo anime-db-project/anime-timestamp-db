@@ -54,8 +54,6 @@ Son métricas diferentes y no deben sumarse como títulos o escenas. Los interva
 | p99 | **0.628 ms** |
 | Consultas secuenciales/s | **1,818** |
 
-Descarga de fuentes y generación: **52 s**.
-
 Consultas secuenciales con caché caliente sobre SQLite publicada, Linux / Python 3.12; 250 episodios × 2 rondas. No representan latencia de red/API.
 
 Versión de referencia: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).

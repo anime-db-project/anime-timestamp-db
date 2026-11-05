@@ -69,7 +69,6 @@ def main() -> int:
     p.add_argument("--rounds", type=int, default=2)
     p.add_argument("--seed", type=int, default=20261105)
     p.add_argument("--output", type=Path)
-    p.add_argument("--build-seconds", type=int)
     a = p.parse_args()
     if a.samples < 1 or a.rounds < 1:
         p.error("--samples and --rounds must be positive")
@@ -86,7 +85,6 @@ def main() -> int:
         "database_bytes": db.stat().st_size,
         "sampled_episodes": len(samples),
         "rounds": a.rounds,
-        "build_seconds": a.build_seconds,
         "normalized_lookup": measure(
             samples, a.rounds, resolver.get_segments_by_anchor
         ),
