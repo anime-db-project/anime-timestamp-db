@@ -380,8 +380,10 @@ class ExternalAdapterTests(unittest.TestCase):
                     max_episodes=1,
                     unknown_episodes=1,
                     only_anchor=101,
+                    positive_ttl_days=30,
+                    negative_ttl_days=14,
                 )
-                with self.assertRaises(ValueError):
+                with self.assertRaisesRegex(ValueError, "explicit permission required"):
                     asyncio.run(crawl_timestamps.crawl(args))
 
 

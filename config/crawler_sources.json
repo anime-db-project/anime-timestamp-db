@@ -62,7 +62,7 @@
     ],
     "retry_429_wait_seconds": 30,
     "max_429_wait_seconds": 45,
-    "requires_bulk_permission": false
+    "requires_bulk_permission": true
   },
   "introhater": {
     "max_requests": 2000,
@@ -75,6 +75,6 @@
     ],
     "retry_429_wait_seconds": 15,
     "max_429_wait_seconds": 45,
-    "requires_bulk_permission": false
+    "requires_bulk_permission": true
   }
 }
