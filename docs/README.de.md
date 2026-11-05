@@ -36,6 +36,61 @@ Reguläre Builds verwenden öffentliche Datensätze und einen Snapshot von Anime
 
 Normalisierte Titel verwenden `amdb:<anchor_id>`. Folgennummern verschiedener Anbieter werden nur bei nachgewiesener Identität verknüpft; unklare Angaben bleiben quellenspezifisch. [Schemaspezifikation](../docs/SCHEMA.md).
 
+## Quellenabdeckung und Normalisierung
+
+Die Quellen verwenden verschiedene Titelkennungen, Folgennummerierungen und Abdeckungsgrade. Ein gültiges Intervall beweist nicht automatisch dieselbe Folge bei MAL und AniList. Der Builder unterscheidet normalisierte, quellenspezifische und verworfene Beobachtungen.
+
+- AniSkip-Öffentlichdaten: MAL-Titel und Episoden; nur geprüfte AMDB-Anker werden normalisiert.
+- SkipDB: IMDb-verknüpfte Abschnitte werden über AniBridge und Anime Mapping DB einer konkreten Folge zugeordnet.
+- Open Anime Timestamps: AniDB-Daten und Aggregationen ohne doppelte Konsensstimmen.
+- Baha Anime Skip: Bahamut-eigene `videoSn`-Folgen ohne erfundene MAL-/AniList-Folgenidentitäten.
+- AniSkip-/Anime-Skip-APIs: verifizierte Checkpoints können die Bulk-Daten unter Beachtung der Rechte ergänzen.
+
+## Titel- und Folgenidentität
+
+Anime Mapping DB liefert die Titelidentität. Normale Titel tragen `anchor_id` beziehungsweise `amdb:<anchor_id>`. Die Timestamp-Datenbank kopiert nicht den gesamten externen ID-Graphen. Für `mal`, `anilist`, `anidb` usw. kann eine separate `mappings.db` eingebunden werden.
+
+Die Folge ist eine eigenständige Identität: Folge 1 kann bei zwei Anbietern unterschiedliche Inhalte bedeuten. Anbieter, Scope und Nummer müssen belegt sein. Bruchteile wie 12.5, Specials und Filme werden nicht gerundet oder willkürlich verbunden. Split-/Merge-Verhältnisse von AniBridge bleiben erhalten.
+
+Wenn der Titel bekannt, die Folge jedoch nicht sicher zuordenbar ist, kann `source_title_refs` den AMDB-Anker belegen und `source_segments` die Abschnitte unter Originalkennungen behalten.
+
+```text
+anime-mapping-db (verified amdb:<anchor_id>)
+       │
+       └── anime-timestamp-db
+              titles → episodes → segments
+                 │                 │
+        source_title_refs        consensus
+                 │
+            source_segments
+```
+
+## Runtime- und Evidenzschema
+
+Die kompakte `timestamps.db` ist für Anwendungen gedacht. `titles` speichert AMDB-Anker, `episodes` Wiedergabeeinheiten, `episode_ids` belegte Anbieterfolgen, `episode_refs` Quellverweise und `segments` normalisierte Abschnitte.
+
+`source_segments` hält gültige, aber noch nicht normalisierte Bereiche. `source_title_refs` enthält nur bestätigte native Titelreferenzen. `consensus_segments` und `consensus_members` dokumentieren Konsens und Bestandteile. `sources` und `lineages` unterscheiden Datensatz und unabhängige Herkunft.
+
+| Tabelle oder Datei | Rolle |
+| --- | --- |
+| `titles` | Stabile AMDB-Titelidentität |
+| `episodes` | Verifizierte Wiedergabeeinheit |
+| `episode_ids` | Anbieterbezogene Folgennummern |
+| `episode_refs` | Originalfolgen der Quellen |
+| `segments` | Normalisierte Zeitintervalle |
+| `source_segments` | Quelleneigene unklare Intervalle |
+| `sources / lineages` | Quellen und unabhängige Linien |
+| `consensus_segments / consensus_members` | Konsens und beteiligte Beobachtungen |
+| `timestamps-evidence.db` | Herkunft und Entscheidungen |
+
+`timestamps-evidence.db` speichert Ursprungsdateien, Hashes, Normalisierungsentscheidungen und ursprüngliche Zeitbereiche. Sie dient Audit und Reproduzierbarkeit, nicht dem üblichen Playback-Lookup. Alle Zeitwerte sind ganze Millisekunden.
+
+## Konsens und Herkunft
+
+Konsens wird unabhängig von Originalbeobachtungen mit einem gewichteten Median errechnet. Toleranzen, Zuordnungsgewichte und unabhängige Datenherkunft werden berücksichtigt; Spiegel erhöhen nicht die Stimmenzahl. Ausgeschlossene Zeilen bleiben abfragbar.
+
+Die Standardtoleranz für Abschnittsgrenzen beträgt 5 Sekunden; `--consensus-tolerance-ms` ändert sie. Konsens ist eine Empfehlung und keine Garantie für identische Schnittfassungen aller Streams.
+
 ## Schnellstart
 
 Python 3.11+:
@@ -46,6 +101,18 @@ cd anime-timestamp-db
 python -m pip install -e .
 anime-timestamp-db build --output-dir artifacts
 anime-timestamp-db audit --db artifacts/timestamps.db --evidence-db artifacts/timestamps-evidence.db
+```
+
+## Kommandozeile
+
+Das CLI erstellt Schemas, baut Datenbanken, zeigt Informationen, auditiert und sucht sowohl normalisierte als auch quelleneigene Abschnitte. `lookup` benötigt `--episode` oder `--episode-key`, unterstützt Quellenfilter und Konsensabfragen. Für fremde Titel-IDs ist `mappings.db` nötig.
+
+```bash
+anime-timestamp-db schema-version
+anime-timestamp-db inspect --db artifacts/timestamps.db
+anime-timestamp-db lookup --db artifacts/timestamps.db --provider amdb --id 18472 --episode 1 --consensus
+anime-timestamp-db source-anchor --db artifacts/timestamps.db --anchor amdb:18472 --title-refs
+anime-timestamp-db source-lookup --db artifacts/timestamps.db --source baha --episode-key 123456
 ```
 
 ## Verwendung
@@ -61,6 +128,41 @@ anime-timestamp-db lookup --db artifacts/timestamps.db --mapping-db mappings.db 
 anime-timestamp-db source-lookup --db artifacts/timestamps.db --source baha --episode-key 123456
 ```
 
+## Python-Integration
+
+`TimestampResolver` kann per AMDB-Anker oder bestätigter Anbieterkennung Quellabschnitte und Konsens lesen. Nicht normalisierbare, aber gültige Bereiche sind ebenfalls abrufbar. Anwendungen mit externen Titel-IDs benötigen die Mapping-Datenbank daneben.
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver(
+    "artifacts/timestamps.db",
+    mapping_path="mappings.db",
+)
+
+# Known provider title / episode number
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+
+# Verified AMDB identity and concrete episode key
+key = resolver.episode_key("amdb", "18472", 1)
+consensus = resolver.get_consensus_by_anchor("amdb:18472", key) if key else []
+```
+
+## API-Sammlung und Release-Import
+
+Unabhängige Sammler nutzen AniSkip v2 (MAL/Folge) und Anime Skip GraphQL (AniList/Titelfolgen). Rate Limits und dauerhafte Checkpoints erlauben die Wiederaufnahme. Spätere Folgen dürfen nicht als vollständig geprüft gelten, nur weil frühere Treffer haben.
+
+Die öffentlichen Branches `crawler-state-aniskip` und `crawler-state-anime_skip` speichern Zustände zwischen Actions. Nur wenn beide Snapshots vorliegen und gültig sind, werden sie bei Build und Release importiert; Teilstände bleiben außen vor.
+
+Anime Skip benötigt das geheime `ANIME_SKIP_CLIENT_ID`. API-Zugang bedeutet keine automatische Weiterverbreitungserlaubnis. Ein lokaler Import erfordert `--api-checkpoint-dir` und `--allow-api-redistribution` als ausdrückliche Bestätigung.
+
+```bash
+anime-timestamp-db build \
+  --output-dir artifacts \
+  --api-checkpoint-dir checkpoints \
+  --allow-api-redistribution
+```
+
 ## Datenbanken und Releases
 
 Normale Builds veröffentlichen GitHub-Actions-Artefakte. Releases entstehen über Tags oder manuell. Enthalten sind `timestamps.db`, `timestamps-evidence.db`, komprimierte Versionen, `manifest.json`, `audit.json`, `SHA256SUMS` und Quellenhinweise.
@@ -69,6 +171,36 @@ Normale Builds veröffentlichen GitHub-Actions-Artefakte. Releases entstehen üb
 - [Releases](https://github.com/anime-db-project/anime-timestamp-db/releases)
 
 Das Projekt ist von **anime-db-bot** unabhängig und keine erforderliche Bot-Abhängigkeit. Vor Integration oder Weitergabe sind Schema, Datenabdeckung und Quellbedingungen zu prüfen.
+
+## Distributionsdateien
+
+Normale Workflows erzeugen befristete Actions-Artefakte; Tags oder manuelle Ausführung veröffentlichen dauerhafte Releases. Laufzeit- und Evidenzdaten sind getrennt. `manifest.json` dokumentiert Quellen, Mapping-Fingerprint, Schema und Größen; `audit.json` enthält Prüfberichte.
+
+| Tabelle oder Datei | Rolle |
+| --- | --- |
+| `timestamps.db` | Kompakte Laufzeit-SQLite |
+| `timestamps-evidence.db` | Detaillierte Evidenz-SQLite |
+| `*.db.zst` | Komprimierte Dateien |
+| `manifest.json` | Quellen, Schema, Größen und Hashes |
+| `audit.json` | Auditbericht |
+| `SHA256SUMS` | SHA-256-Prüfsummen |
+| `DATA_LICENSE.md / THIRD_PARTY_NOTICES.md` | Lizenzen und Quellenhinweise |
+
+## Audit und Reproduzierbarkeit
+
+Jeder Build prüft SQLite-Integrität, Fremdschlüssel, gültige Intervalle, Titel-/Folgenbeziehungen, Konsensmitglieder und nicht leere Quelldaten. Strenge Zwischenformen und kompakte Distributionen werden kontrolliert; abgewiesene Zuordnungen dürfen nicht als normale Abschnitte erscheinen.
+
+URL, SHA-256, Byteanzahl und Abrufdetails der Quellen werden gespeichert. Ein überprüfter Anime-Mapping-DB-Snapshot wird lokal verwendet. Aktuelle Mengen und Größen stehen im Manifest, nicht in festen README-Zahlen.
+
+```bash
+anime-timestamp-db audit \
+  --db artifacts/timestamps.db \
+  --evidence-db artifacts/timestamps-evidence.db
+```
+
+## Integrationsgrenzen
+
+Das Projekt ist unabhängig vom anime-db-bot und für ihn nicht verpflichtend. Normale Datenbank-Builds durchsuchen keine Streamingseiten, garantieren keine Abschnitte für jeden Titel und erzwingen keine unsicheren Folgenzuordnungen.
 
 ## Dokumentation
 
