@@ -40,23 +40,23 @@
 
 | 指標 | 値 |
 | --- | ---: |
-| 中央値 | **0.571 ms** |
-| p95 | **0.618 ms** |
-| p99 | **0.645 ms** |
-| 逐次検索/秒 | **1,734** |
+| 中央値 | **0.382 ms** |
+| p95 | **0.432 ms** |
+| p99 | **0.501 ms** |
+| 逐次検索/秒 | **2,562** |
 
 **合意区間**
 
 | 指標 | 値 |
 | --- | ---: |
-| 中央値 | **0.535 ms** |
-| p95 | **0.562 ms** |
-| p99 | **0.597 ms** |
-| 逐次検索/秒 | **1,858** |
+| 中央値 | **0.350 ms** |
+| p95 | **0.383 ms** |
+| p99 | **0.411 ms** |
+| 逐次検索/秒 | **2,822** |
 
 リリース SQLite へのキャッシュ済み逐次読み取り、Linux / Python 3.12。250話 × 2回。ネットワーク API の遅延ではありません。
 
-リリース時点: **2026-11-05**, [v2026.11.05.10](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.10). [最新マニフェスト](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+リリース時点: **2026-11-05**, [v2026.11.05.11](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.11). [最新マニフェスト](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
