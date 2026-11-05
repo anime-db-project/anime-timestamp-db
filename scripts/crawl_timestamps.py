@@ -257,6 +257,58 @@ def _retry_after(headers: httpx.Headers, default: float) -> float:
     return default
 
 
+def describe_http_403(response: httpx.Response) -> str:
+    """Safe upstream-denial diagnostics: never log payloads or credentials."""
+    headers = response.headers
+    pieces = ["HTTP 403: access forbidden"]
+    media = headers.get("content-type", "").split(";", 1)[0].lower().strip()
+    if media in {"text/html", "application/json", "text/plain"}:
+        pieces.append(f"content_type={media}")
+    if headers.get("server", "").lower() == "cloudflare":
+        pieces.append("server=cloudflare")
+    ray = headers.get("cf-ray", "").strip()
+    if 0 < len(ray) <= 80 and all(c.isalnum() or c == "-" for c in ray):
+        pieces.append(f"cf_ray={ray}")
+    if headers.get("cf-mitigated", "").lower() == "challenge":
+        reason = "edge_challenge"
+    else:
+        # Classify upstream text, but never log it: it could echo an API key.
+        body = response.text[:1200].lower()
+        if any(
+            x in body
+            for x in (
+                "invalid api key",
+                "api key invalid",
+                "expired api key",
+                "invalid token",
+                "token expired",
+                "key revoked",
+            )
+        ):
+            reason = "invalid_or_expired_credential"
+        elif any(
+            x in body
+            for x in (
+                "not authorized",
+                "insufficient permission",
+                "insufficient scope",
+                "not permitted",
+            )
+        ):
+            reason = "insufficient_permissions"
+        elif "rate limit" in body or "too many requests" in body:
+            reason = "upstream_rate_or_quota_block"
+        elif media == "text/html" and any(
+            x in body for x in ("cloudflare", "just a moment", "captcha", "challenge")
+        ):
+            reason = "possible_edge_challenge"
+        else:
+            reason = "upstream_forbidden_unspecified"
+    pieces.append(f"reason={reason}")
+    pieces.append("no retry")
+    return "; ".join(pieces)
+
+
 async def request_json(
     client: httpx.AsyncClient,
     limiter: Limiter | PacedLimiter,
@@ -297,7 +349,7 @@ async def request_json(
             await asyncio.sleep(max(0.1, delay))
             continue
         if response.status_code == 403:
-            raise BadUpstreamResponse("HTTP 403: access forbidden; no retry")
+            raise BadUpstreamResponse(describe_http_403(response))
         if response.status_code >= 500:
             transient += 1
             if transient >= 3:

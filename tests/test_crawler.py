@@ -220,6 +220,61 @@ class CrawlerTests(unittest.TestCase):
         self.assertIn(("5114:7", 101, "5114", 7), items)
         self.assertIn(("21:2", 202, "21", 2), items)
 
+    def test_http_403_logs_safe_diagnostics_without_retries(self) -> None:
+        class NoWait:
+            async def wait(self):
+                return None
+
+        async def check(response: httpx.Response, expected: str) -> None:
+            hits = [0]
+
+            def handler(_request: httpx.Request) -> httpx.Response:
+                hits[0] += 1
+                return response
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                budget = [3]
+                with self.assertRaises(crawl.BadUpstreamResponse) as caught:
+                    await crawl.request_json(
+                        client,
+                        NoWait(),
+                        budget,
+                        "GET",
+                        "https://example.org/api/media",
+                        headers={"Authorization": "Bearer secret-test-token"},
+                    )
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn("secret-test-token", str(caught.exception))
+                self.assertEqual(hits[0], 1)
+                self.assertEqual(budget[0], 2)
+
+        asyncio.run(
+            check(
+                httpx.Response(
+                    403,
+                    json={"error": "Invalid API key secret-test-token"},
+                    headers={"cf-ray": "ray-test-FRA", "server": "cloudflare"},
+                ),
+                "reason=invalid_or_expired_credential",
+            )
+        )
+        asyncio.run(
+            check(
+                httpx.Response(
+                    403,
+                    text="<html>Just a moment... Cloudflare challenge</html>",
+                    headers={
+                        "content-type": "text/html",
+                        "server": "cloudflare",
+                        "cf-mitigated": "challenge",
+                    },
+                ),
+                "reason=edge_challenge",
+            )
+        )
+
     def test_checkpoint_and_ttl(self) -> None:
         path = self.root / "state" / "aniskip.json.gz"
         crawl.write_gzip_json(path, {"version": 1, "source": "aniskip", "records": {}})
