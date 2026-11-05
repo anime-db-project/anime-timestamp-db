@@ -14,6 +14,23 @@
 
 アニメの OP、ED、回想、予告などのスキップ区間を、出典を追跡できる SQLite データとして構築する独立したプロジェクトです。
 
+## データベースの収録状況
+
+検証済みリリースには **57,623話**、**214,241件の正規化区間**、**125,085件の合意区間**が含まれます。これらは別の指標であり、足し合わせて作品数やシーン数とすることはできません。
+
+| 指標 | 値 |
+| --- | ---: |
+| AMDB ID が確認された作品 | **4,340** |
+| 正規化されたエピソード | **57,623** |
+| 正規化された区間の観測 | **214,241** |
+| ソース ID のみで参照できる区間 | **44,646** |
+| 合意区間 | **125,085** |
+| 合意区間と元データの結び付き | **184,429** |
+| 証拠レコード | **299,537** |
+| 取得した元データのスナップショット | **8** |
+
+**2026年11月5日** の [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8) の値です。最新の数値は [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) と [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json) を参照してください。未解決の区間は検索できますが、確認済みエピソード数には含みません。
+
 ## 主な機能
 
 - Anime Mapping DB の検証済み ID に基づく作品・エピソードへの紐付け。
@@ -147,6 +164,74 @@ segments = resolver.get_segments_by_episode("mal", "5114", 1)
 key = resolver.episode_key("amdb", "18472", 1)
 consensus = resolver.get_consensus_by_anchor("amdb:18472", key) if key else []
 ```
+
+## データベースを利用する方法
+
+配布 SQLite は API キーやクローラー、ビルド処理なしで使えます。主な利用例は次のとおりです。
+
+- **動画プレーヤー.** データがある話に OP/ED、回想、予告のスキップ操作を追加します。
+- **作品サイト.** 各話のタイムライン、元ソース、合意状況を表示します。
+- **ボット・アプリ.** AMDB または検証済み MAL/AniList/AniDB ID で区間を取得します。
+- **オフラインアプリ.** SQLite を同梱し、実行時に外部 API を呼ばずに検索します。
+- **監査と分析.** 元データ、未解決区間、合意結果を比較します。
+
+配布済み SQLite を取得します。AMDB ID だけなら `timestamps.db` で十分です。外部タイトル ID を使う場合は互換の `mappings.db` も必要です。
+
+```bash
+curl -fL -o timestamps.db \
+  https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/timestamps.db
+curl -fL -o mappings.db \
+  https://github.com/anime-db-project/anime-mapping-db/releases/latest/download/mappings.db
+```
+
+リポジトリを `python -m pip install -e .` でインストールし、`TimestampResolver` から元区間と合意区間を取得します。
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver("timestamps.db", mapping_path="mappings.db")
+
+# Use a verified MAL title ID and its own episode numbering.
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+key = resolver.episode_key("mal", "5114", 1)
+consensus = resolver.get_consensus("mal", "5114", key) if key else []
+
+for segment in segments:
+    print(segment.segment_type, segment.start_ms / 1000, segment.end_ms / 1000)
+for segment in consensus:
+    print("consensus", segment.segment_type, segment.start_ms, segment.end_ms)
+```
+
+標準の SQLite ドライバーを使って直接参照することもできます。次は AMDB ID と話キーによる正規化区間の例です。
+
+```python
+import sqlite3
+
+with sqlite3.connect("file:timestamps.db?mode=ro", uri=True) as db:
+    intervals = db.execute("""
+        SELECT ep.episode_key, seg.segment_type, seg.start_ms,
+               seg.end_ms, src.source_key
+        FROM episodes AS ep
+        JOIN segments AS seg ON seg.episode_id = ep.id
+        JOIN sources AS src ON src.id = seg.source_id
+        WHERE ep.anchor_id = ? AND ep.episode_key = ?
+        ORDER BY seg.start_ms
+    """, (18472, "ep:1")).fetchall()
+
+for interval in intervals:
+    print(interval)
+```
+
+例の ID と話キーは実在する値に置き換えてください。`start_ms`、`end_ms` は**ミリ秒の整数**であり、秒を要求するプレーヤーでは 1000 で割ります。Mapping DB に作品があっても区間があるとは限りません。
+
+未解決データは `source-lookup` または `source-anchor` で取得できます。ソースの話キーを MAL/AniList の話数と無条件にみなしてはいけません。
+
+```bash
+anime-timestamp-db source-anchor --db timestamps.db --anchor amdb:18472
+anime-timestamp-db source-lookup --db timestamps.db --source baha --episode-key 123456
+```
+
+両方の DB を使う場合は互換のスナップショットとチェックサムを確認してください。タイムスタンプ側のマニフェストにはビルドに使用した Mapping DB のハッシュがあります。
 
 ## API 収集とリリース取り込み
 

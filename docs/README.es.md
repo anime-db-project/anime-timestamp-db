@@ -14,6 +14,23 @@
 
 Herramienta independiente y base SQLite de segmentos saltables de anime — aperturas, cierres, resúmenes y avances — con evidencia rastreable.
 
+## El dataset en cifras
+
+La versión verificada incluye **57.623 episodios normalizados**, **214.241 intervalos asociados** y **125.085 intervalos de consenso**. Son métricas distintas, no cantidades que deban sumarse como escenas o animes únicos.
+
+| Indicador | Valor |
+| --- | ---: |
+| Títulos con identidad AMDB confirmada | **4,340** |
+| Episodios normalizados | **57,623** |
+| Observaciones de intervalos normalizados | **214,241** |
+| Intervalos consultables solo por ID de fuente | **44,646** |
+| Intervalos de consenso | **125,085** |
+| Relaciones de consenso con observaciones | **184,429** |
+| Registros de evidencia | **299,537** |
+| Instantáneas de fuentes | **8** |
+
+Instantánea del **5 de noviembre de 2026**, versión [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). Para cifras actuales, consulte [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) y [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json). Los intervalos sin identidad resuelta no cuentan como episodios normalizados.
+
 ## Funciones
 
 - Vinculación de intervalos a títulos y episodios verificados por Anime Mapping DB.
@@ -147,6 +164,74 @@ segments = resolver.get_segments_by_episode("mal", "5114", 1)
 key = resolver.episode_key("amdb", "18472", 1)
 consensus = resolver.get_consensus_by_anchor("amdb:18472", key) if key else []
 ```
+
+## Opciones de uso del dataset
+
+Es posible usar el archivo SQLite ya compilado sin recolectores, claves API ni procesos de compilación:
+
+- **Reproductores.** Mostrar botones para saltar apertura, cierre, recapitulación o avance.
+- **Portales de anime.** Representar intervalos y concordancia de fuentes en la línea temporal del episodio.
+- **Bots y aplicaciones.** Consultar rangos por AMDB o por IDs MAL/AniList/AniDB verificados.
+- **Aplicaciones sin conexión.** Incluir una SQLite de solo lectura para consultas locales sin servicios externos.
+- **Auditoría.** Comparar observaciones originales, rangos no resueltos y consenso.
+
+Descargue las bases SQLite publicadas. Para IDs AMDB basta `timestamps.db`; para IDs externos hace falta también `mappings.db` compatible:
+
+```bash
+curl -fL -o timestamps.db \
+  https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/timestamps.db
+curl -fL -o mappings.db \
+  https://github.com/anime-db-project/anime-mapping-db/releases/latest/download/mappings.db
+```
+
+Instale el paquete del repositorio (`python -m pip install -e .`) y use `TimestampResolver` para obtener observaciones y consenso:
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver("timestamps.db", mapping_path="mappings.db")
+
+# Use a verified MAL title ID and its own episode numbering.
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+key = resolver.episode_key("mal", "5114", 1)
+consensus = resolver.get_consensus("mal", "5114", key) if key else []
+
+for segment in segments:
+    print(segment.segment_type, segment.start_ms / 1000, segment.end_ms / 1000)
+for segment in consensus:
+    print("consensus", segment.segment_type, segment.start_ms, segment.end_ms)
+```
+
+También se puede consultar SQLite desde cualquier lenguaje. Ejemplo de intervalos normalizados por ID AMDB y clave de episodio:
+
+```python
+import sqlite3
+
+with sqlite3.connect("file:timestamps.db?mode=ro", uri=True) as db:
+    intervals = db.execute("""
+        SELECT ep.episode_key, seg.segment_type, seg.start_ms,
+               seg.end_ms, src.source_key
+        FROM episodes AS ep
+        JOIN segments AS seg ON seg.episode_id = ep.id
+        JOIN sources AS src ON src.id = seg.source_id
+        WHERE ep.anchor_id = ? AND ep.episode_key = ?
+        ORDER BY seg.start_ms
+    """, (18472, "ep:1")).fetchall()
+
+for interval in intervals:
+    print(interval)
+```
+
+Sustituya los IDs de ejemplo por valores existentes. `start_ms` y `end_ms` se expresan en **milisegundos enteros**; divida entre 1000 si el reproductor trabaja en segundos. Un anime en Mapping DB puede carecer de timestamps.
+
+Los registros sin resolver siguen disponibles mediante `source-lookup` o `source-anchor`. No equipare sin pruebas las claves de episodio del origen con episodios MAL/AniList.
+
+```bash
+anime-timestamp-db source-anchor --db timestamps.db --anchor amdb:18472
+anime-timestamp-db source-lookup --db timestamps.db --source baha --episode-key 123456
+```
+
+Compruebe compatibilidad de versiones, manifiestos y SHA-256. El manifest de timestamps incluye el hash exacto de Mapping DB empleado.
 
 ## Recopilación API e importación
 

@@ -14,6 +14,23 @@
 
 A standalone tool and SQLite dataset for anime episode skip intervals: openings, endings, recaps, previews and related segments, with traceable source evidence.
 
+## Database at a glance
+
+**57,623 normalized episodes**, **214,241 mapped skip intervals**, and **125,085 consensus intervals** in the verified release. These figures describe separate measurements; they should not be added together as a count of unique scenes or anime.
+
+| Metric | Value |
+| --- | ---: |
+| Anime titles with AMDB identities in runtime DB | **4,340** |
+| Normalized episodes | **57,623** |
+| Normalized timestamp observations | **214,241** |
+| Source-only timestamp observations | **44,646** |
+| Derived consensus ranges | **125,085** |
+| Consensus memberships (votes/links) | **184,429** |
+| Evidence records | **299,537** |
+| Downloaded source snapshots | **8** |
+
+Snapshot: **5 November 2026**, release [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). These numbers are not live; consult [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) and [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json) for the newest build. Source-only ranges remain queryable but are **not** counted as confirmed normalized episodes.
+
 ## Features
 
 - Normalize source intervals to anime and episode identities verified by Anime Mapping DB.
@@ -147,6 +164,74 @@ segments = resolver.get_segments_by_episode("mal", "5114", 1)
 key = resolver.episode_key("amdb", "18472", 1)
 consensus = resolver.get_consensus_by_anchor("amdb:18472", key) if key else []
 ```
+
+## Practical ways to use the database
+
+You can use the published SQLite file without running the crawlers, an API key, or the build pipeline. Choose a method that suits your product:
+
+- **Video players.** Show optional skip-opening, skip-ending, recap or preview actions for an episode when matching data exists.
+- **Anime websites and catalogues.** Display episode timeline annotations, provenance and cross-source agreement.
+- **Bots and applications.** Resolve a title by AMDB or confirmed MAL/AniList/AniDB ID and fetch source-specific or consensus ranges.
+- **Offline or mobile tools.** Bundle a compatible SQLite snapshot for local, read-only lookups without runtime calls to upstream APIs.
+- **Auditing and data research.** Compare individual observations, source-only coverage and consensus; inspect the evidence database for provenance.
+
+Download the existing release databases. For AMDB IDs alone, `timestamps.db` is sufficient; to look up MAL/AniList/etc. title IDs, also download a compatible `mappings.db`:
+
+```bash
+curl -fL -o timestamps.db \
+  https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/timestamps.db
+curl -fL -o mappings.db \
+  https://github.com/anime-db-project/anime-mapping-db/releases/latest/download/mappings.db
+```
+
+Use the packaged `TimestampResolver` (`python -m pip install -e .` in the cloned timestamp repository). It returns source-specific segments and consensus independently:
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver("timestamps.db", mapping_path="mappings.db")
+
+# Use a verified MAL title ID and its own episode numbering.
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+key = resolver.episode_key("mal", "5114", 1)
+consensus = resolver.get_consensus("mal", "5114", key) if key else []
+
+for segment in segments:
+    print(segment.segment_type, segment.start_ms / 1000, segment.end_ms / 1000)
+for segment in consensus:
+    print("consensus", segment.segment_type, segment.start_ms, segment.end_ms)
+```
+
+SQLite can also be used directly from any language with a SQLite driver. This read-only SQL example fetches normalized intervals by AMDB anchor and episode key:
+
+```python
+import sqlite3
+
+with sqlite3.connect("file:timestamps.db?mode=ro", uri=True) as db:
+    intervals = db.execute("""
+        SELECT ep.episode_key, seg.segment_type, seg.start_ms,
+               seg.end_ms, src.source_key
+        FROM episodes AS ep
+        JOIN segments AS seg ON seg.episode_id = ep.id
+        JOIN sources AS src ON src.id = seg.source_id
+        WHERE ep.anchor_id = ? AND ep.episode_key = ?
+        ORDER BY seg.start_ms
+    """, (18472, "ep:1")).fetchall()
+
+for interval in intervals:
+    print(interval)
+```
+
+Replace the illustrative anchor and episode with IDs that actually exist in your chosen snapshot. `start_ms` and `end_ms` are **integer milliseconds**, so divide by 1,000 only when your player needs seconds. A title present in Anime Mapping DB does not necessarily have any timestamp entries.
+
+Unresolved observations can still be inspected using `source-lookup` or `source-anchor`; do not interpret a source's episode key as a confirmed MAL/AniList episode number.
+
+```bash
+anime-timestamp-db source-anchor --db timestamps.db --anchor amdb:18472
+anime-timestamp-db source-lookup --db timestamps.db --source baha --episode-key 123456
+```
+
+Use the release manifests and SHA-256 checksums to pin compatible database versions. The timestamp release records the exact mapping database hash used during its build; mismatched snapshots may produce missed lookups or anchor redirects.
 
 ## API collection and release imports
 

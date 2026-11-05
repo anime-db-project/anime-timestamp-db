@@ -14,6 +14,23 @@
 
 Самостоятельный инструмент и база SQLite с интервалами пропуска в сериях аниме: опенинги, эндинги, рекапы, превью и другие сегменты, с проверяемым происхождением записей.
 
+## Статистика базы таймкодов
+
+**57 623 нормализованные серии**, **214 241 сопоставленный таймкод** и **125 085 консенсусных интервалов** в проверенном релизе. Это разные показатели: их нельзя складывать и трактовать как количество уникальных аниме или сцен.
+
+| Показатель | Значение |
+| --- | ---: |
+| Тайтлы с подтверждённым AMDB ID в runtime-базе | **4,340** |
+| Нормализованные серии | **57,623** |
+| Сопоставленные исходные интервалы | **214,241** |
+| Таймкоды, доступные только по ID источника | **44,646** |
+| Результирующие консенсусные интервалы | **125,085** |
+| Связи консенсуса с исходными наблюдениями | **184,429** |
+| Записи базы доказательств | **299,537** |
+| Снимки исходных наборов | **8** |
+
+Снимок от **5 ноября 2026 года**, релиз [`v2026.11.05.8`](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). Значения не обновляются в README автоматически: свежие цифры находятся в [`manifest.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json) и [`audit.json`](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/audit.json). Source-only интервалы доступны для поиска, но **не** считаются подтверждёнными нормализованными сериями.
+
 ## Возможности
 
 - Привязка таймкодов к тайтлам и сериям через проверенные идентификаторы Anime Mapping DB.
@@ -147,6 +164,74 @@ segments = resolver.get_segments_by_episode("mal", "5114", 1)
 key = resolver.episode_key("amdb", "18472", 1)
 consensus = resolver.get_consensus_by_anchor("amdb:18472", key) if key else []
 ```
+
+## Варианты использования базы таймкодов
+
+Готовый SQLite можно использовать без запуска сборщиков API, без ключей и без пересборки проекта. В зависимости от задачи доступны следующие варианты:
+
+- **Видеоплееры.** Добавляйте кнопки пропуска OP, ED, рекапа и превью при наличии данных для конкретной серии.
+- **Аниме-каталоги и сайты.** Показывайте разметку таймлайна серии, происхождение интервалов и согласованность источников.
+- **Боты и приложения.** Находите тайтл по AMDB либо проверенному ID MAL/AniList/AniDB и возвращайте интервалы нужного источника или консенсус.
+- **Офлайн- и мобильные приложения.** Поставляйте SQLite вместе с приложением для локального чтения без запросов к API в runtime.
+- **Аудит и анализ.** Сравнивайте исходные наблюдения и консенсус, находите source-only записи и изучайте доказательства.
+
+Скачайте опубликованные базы. Если приложение работает только с AMDB ID, достаточно `timestamps.db`. Для поиска по внешним ID MAL/AniList и другим потребуется также совместимая `mappings.db`:
+
+```bash
+curl -fL -o timestamps.db \
+  https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/timestamps.db
+curl -fL -o mappings.db \
+  https://github.com/anime-db-project/anime-mapping-db/releases/latest/download/mappings.db
+```
+
+Используйте `TimestampResolver` из Python-пакета (`python -m pip install -e .` в клоне timestamp-репозитория). Исходные интервалы и консенсус можно получать независимо:
+
+```python
+from anime_timestamp_db import TimestampResolver
+
+resolver = TimestampResolver("timestamps.db", mapping_path="mappings.db")
+
+# Use a verified MAL title ID and its own episode numbering.
+segments = resolver.get_segments_by_episode("mal", "5114", 1)
+key = resolver.episode_key("mal", "5114", 1)
+consensus = resolver.get_consensus("mal", "5114", key) if key else []
+
+for segment in segments:
+    print(segment.segment_type, segment.start_ms / 1000, segment.end_ms / 1000)
+for segment in consensus:
+    print("consensus", segment.segment_type, segment.start_ms, segment.end_ms)
+```
+
+Прямое чтение SQLite возможно на любом языке с драйвером SQLite. Пример SQL для нормализованных интервалов по AMDB ID и ключу серии:
+
+```python
+import sqlite3
+
+with sqlite3.connect("file:timestamps.db?mode=ro", uri=True) as db:
+    intervals = db.execute("""
+        SELECT ep.episode_key, seg.segment_type, seg.start_ms,
+               seg.end_ms, src.source_key
+        FROM episodes AS ep
+        JOIN segments AS seg ON seg.episode_id = ep.id
+        JOIN sources AS src ON src.id = seg.source_id
+        WHERE ep.anchor_id = ? AND ep.episode_key = ?
+        ORDER BY seg.start_ms
+    """, (18472, "ep:1")).fetchall()
+
+for interval in intervals:
+    print(interval)
+```
+
+Замените примерный AMDB ID и номер серии на существующие в вашей версии базы. `start_ms` и `end_ms` хранятся **в целых миллисекундах** — для плеера, работающего в секундах, делите на 1000. Наличие тайтла в Anime Mapping DB не гарантирует наличия таймкодов.
+
+Неразрешённые записи доступны через `source-lookup` или `source-anchor`. Собственный ключ серии источника нельзя автоматически считать номером серии MAL/AniList.
+
+```bash
+anime-timestamp-db source-anchor --db timestamps.db --anchor amdb:18472
+anime-timestamp-db source-lookup --db timestamps.db --source baha --episode-key 123456
+```
+
+При совместном использовании сверяйте версии, SHA-256 и манифесты. Релиз таймкодов фиксирует точный хеш использованной mapping-базы; несовместимые снимки могут привести к пропущенным совпадениям или редиректам anchor.
 
 ## API-сборщики и импорт в релизы
 
