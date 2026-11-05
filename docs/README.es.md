@@ -40,23 +40,23 @@ Son métricas diferentes y no deben sumarse como títulos o escenas. Los interva
 
 | Indicador | Valor |
 | --- | ---: |
-| Mediana | **0.381 ms** |
-| p95 | **0.425 ms** |
-| p99 | **0.466 ms** |
-| Consultas secuenciales/s | **2,589** |
+| Mediana | **0.779 ms** |
+| p95 | **0.842 ms** |
+| p99 | **0.897 ms** |
+| Consultas secuenciales/s | **1,270** |
 
 **Intervalos de consenso**
 
 | Indicador | Valor |
 | --- | ---: |
-| Mediana | **0.349 ms** |
-| p95 | **0.386 ms** |
-| p99 | **0.419 ms** |
-| Consultas secuenciales/s | **2,825** |
+| Mediana | **0.729 ms** |
+| p95 | **0.766 ms** |
+| p99 | **0.813 ms** |
+| Consultas secuenciales/s | **1,362** |
 
 Consultas secuenciales con caché caliente sobre SQLite publicada, Linux / Python 3.12; 250 episodios × 2 rondas. No representan latencia de red/API.
 
-Versión de referencia: **2026-11-05**, [v2026.11.05.12](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.12). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Versión de referencia: **2026-11-05**, [v2026.11.05.13](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.13). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
