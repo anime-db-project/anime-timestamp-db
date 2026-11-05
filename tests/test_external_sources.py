@@ -315,8 +315,8 @@ class ExternalAdapterTests(unittest.TestCase):
                     mock.patch.dict(
                         "os.environ",
                         {
-                            "BULK_SOURCE_PERMISSION_INTRODB": "true",
-                            "BULK_SOURCE_PERMISSION_INTROHATER": "true",
+                            "BULK_SOURCE_PERMISSION_INTRODB": "false",
+                            "BULK_SOURCE_PERMISSION_INTROHATER": "false",
                         },
                     ),
                 ):
