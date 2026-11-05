@@ -4,6 +4,8 @@ import base64
 import gzip
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,6 +51,24 @@ class CheckpointStoreTests(unittest.TestCase):
                 self.state["writes"] += 1
                 return {"content": {"sha": "mocksha"}}
         raise AssertionError((method, endpoint))
+
+    def test_action_script_import_works_without_root_on_python_path(self) -> None:
+        # GitHub Actions runs checkpoint_store.py as a direct script. Such
+        # execution does NOT expose the repository root as a package path.
+        script_dir = Path(__file__).resolve().parents[1] / "scripts"
+        code = (
+            "import sys; sys.path.insert(0, " + repr(str(script_dir)) + "); "
+            "from checkpoint_store import _branch; "
+            "print(_branch('aniskip'))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        self.assertEqual(result.stdout.strip(), "crawler-state-aniskip")
 
     def test_restore_persist_noop_and_backup(self) -> None:
         self.path.write_bytes(self.data)

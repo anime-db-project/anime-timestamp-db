@@ -69,7 +69,7 @@ handling without any network traffic with `python -m unittest`.
 To crawl after the necessary permission:
 
 ```bash
-python scripts/crawl_timestamps.py \
+python -m scripts.crawl_timestamps \
   --source theintrodb \
   --mapping-db inputs/mappings.db \
   --max-requests 100 \

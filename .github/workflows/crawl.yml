@@ -162,7 +162,7 @@ jobs:
           if [[ -n "$REQUEST_LIMIT" ]]; then
             budget_args=(--max-requests "$REQUEST_LIMIT")
           fi
-          python scripts/crawl_timestamps.py \
+          python -m scripts.crawl_timestamps \
             --source "$SOURCE" \
             --mapping-db inputs/mappings.db \
             "${hint_args[@]}" \

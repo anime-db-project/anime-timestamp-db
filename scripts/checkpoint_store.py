@@ -57,9 +57,16 @@ def _github(method: str, endpoint: str, payload: dict | None = None) -> dict | N
 
 
 def _branch(source: str) -> str:
-    from scripts.source_policies import load_policies
-
-    if source not in load_policies():
+    # This utility is invoked directly by Actions and also imported as a
+    # package. Keep branch validation independent of import search paths.
+    if source not in (
+        "aniskip",
+        "anime_skip",
+        "introdb",
+        "publicmetadb",
+        "theintrodb",
+        "introhater",
+    ):
         raise ValueError(f"Unknown source {source!r}")
     return BRANCH_PREFIX + source
 
