@@ -40,23 +40,23 @@
 
 | Показатель | Значение |
 | --- | ---: |
-| Медиана | **0.585 ms** |
-| p95 | **0.629 ms** |
-| p99 | **0.708 ms** |
-| Последовательные запросы/с | **1,692** |
+| Медиана | **0.571 ms** |
+| p95 | **0.618 ms** |
+| p99 | **0.645 ms** |
+| Последовательные запросы/с | **1,734** |
 
 **Консенсусные интервалы**
 
 | Показатель | Значение |
 | --- | ---: |
-| Медиана | **0.547 ms** |
-| p95 | **0.573 ms** |
-| p99 | **0.628 ms** |
-| Последовательные запросы/с | **1,818** |
+| Медиана | **0.535 ms** |
+| p95 | **0.562 ms** |
+| p99 | **0.597 ms** |
+| Последовательные запросы/с | **1,858** |
 
 Последовательные запросы к релизной SQLite с прогретым кэшем, Linux / Python 3.12; 250 серий × 2 повторения. Показатели не измеряют сетевую задержку API.
 
-Снимок релиза: **2026-11-05**, [v2026.11.05.9](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.9). [Актуальный манифест](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Снимок релиза: **2026-11-05**, [v2026.11.05.10](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.10). [Актуальный манифест](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
