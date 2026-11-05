@@ -76,7 +76,9 @@ class CrawlerTests(unittest.TestCase):
         # The current schema prevents this, but imported/legacy rows must
         # still be rejected if they ever violate the ownership invariant.
         class LegacyConnection:
-            def execute(self, _query: str) -> list[tuple[int, str, str]]:
+            def execute(
+                self, _query: str, _parameters: object = ()
+            ) -> list[tuple[int, str, str]]:
                 return [
                     (101, "mal", "5114"),
                     (101, "anilist", "9253"),

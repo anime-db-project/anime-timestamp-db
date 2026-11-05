@@ -11,6 +11,7 @@ import zstandard as zstd
 
 from anime_timestamp_db.anibridge import AniBridgeIndex
 from anime_timestamp_db.api_importer import import_api_checkpoint
+from anime_timestamp_db.external_importer import import_external_checkpoint
 from anime_timestamp_db.aniskip_importer import import_aniskip
 from anime_timestamp_db.audit import audit_databases
 from anime_timestamp_db.config import (
@@ -20,6 +21,7 @@ from anime_timestamp_db.config import (
     ANISKIP_API,
     ANIME_SKIP_API,
     BAHA,
+    EXTERNAL_API_SPECS,
     OPEN_ANIME_TIMESTAMPS,
     SKIPDB,
 )
@@ -49,7 +51,7 @@ from anime_timestamp_db.schema import (
 )
 from anime_timestamp_db.skipdb_mapping import SkipDBMappingIndex
 
-BUILD_FORMAT_VERSION = 12
+BUILD_FORMAT_VERSION = 13
 
 
 def _sha256(path: Path) -> str:
@@ -103,6 +105,9 @@ def build_database(
     consensus_tolerance_ms: int = 5000,
     api_checkpoint_dir: Path | None = None,
     allow_api_redistribution: bool = False,
+    external_checkpoint_dir: Path | None = None,
+    external_sources: tuple[str, ...] = (),
+    allow_external_data_redistribution: bool = False,
 ) -> dict[str, Any]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +142,37 @@ def build_database(
                 last_modified="",
                 from_cache=False,
             )
+    if external_sources and (
+        not allow_external_data_redistribution or external_checkpoint_dir is None
+    ):
+        raise ValueError(
+            "External provider re-publication requires the explicit permission flag "
+            "and checkpoint directory. Provider attribution is not authorization."
+        )
+    if external_checkpoint_dir is not None and not external_sources:
+        raise ValueError("Specify explicit --external-source selections")
+    if len(set(external_sources)) != len(external_sources):
+        raise ValueError("Duplicate external source selected")
+    external_downloads: dict[str, DownloadedSource] = {}
+    for source in external_sources:
+        if source not in EXTERNAL_API_SPECS:
+            raise ValueError(f"Unsupported external API source {source!r}")
+        spec = EXTERNAL_API_SPECS[source]
+        path = Path(external_checkpoint_dir) / f"{source}.json.gz"
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        external_downloads[source] = DownloadedSource(
+            key=spec.key,
+            path=path,
+            source_url=spec.url,
+            final_url=spec.url,
+            sha256=_sha256(path),
+            size_bytes=path.stat().st_size,
+            retrieved_at=generated_at,
+            etag="",
+            last_modified="",
+            from_cache=False,
+        )
     specs = (
         ANIBRIDGE,
         ANIME_MAPPING_DB,
@@ -329,6 +365,27 @@ def build_database(
                 anibridge=anibridge,
             ).as_dict()
 
+        for source, download in external_downloads.items():
+            spec = EXTERNAL_API_SPECS[source]
+            snapshot_id = writer.add_snapshot(
+                spec,
+                download,
+                metadata={
+                    "role": "operator-approved-external-source-only-checkpoint",
+                    "source_native_episode_coordinates": True,
+                    "independent_episode_mapping_required": True,
+                    "source_specific_redistribution_authorization": True,
+                    "license_not_inferred_from_attribution": True,
+                },
+            )
+            api_stats[spec.key] = import_external_checkpoint(
+                download.path,
+                source=source,
+                writer=writer,
+                snapshot_id=snapshot_id,
+                identities=identities,
+            ).as_dict()
+
         normalization_stats = merge_movie_episode_aliases(writer.conn)
         # Include AniSkip/Anime Skip-proven episode identifiers in the final
         # manifest count, while preserving exact import insert statistics.
@@ -381,6 +438,7 @@ def build_database(
         ("THIRD_PARTY_NOTICES.md", None),
         ("ANISKIP_PUBLIC_DATA_NOTICE.md", None),
         ("OPEN_ANIME_TIMESTAMPS_NOTICE.md", None),
+        ("EXTERNAL_SOURCES_NOTICE.md", None),
         ("licenses/SKIPDB_DATA_LICENSE.txt", None),
         ("licenses/BAHA_LICENSE.txt", None),
         ("licenses/ANIBRIDGE_LICENSE.txt", None),
@@ -434,6 +492,8 @@ def build_database(
             "enabled": bool(api_downloads),
             "operator_authorized_redistribution": bool(api_downloads),
             "sources": list(api_downloads),
+            "external_sources": list(external_downloads),
+            "external_operator_authorized_redistribution": bool(external_downloads),
         },
         "normalization": normalization_stats.as_dict(),
         "episode_index": episode_index_stats.as_dict(),
@@ -461,6 +521,18 @@ def build_database(
             "source_kind": spec.source_kind,
             "license_note": spec.license_note,
             "explicit_redistribution_license": False,
+        }
+
+    for source, download in external_downloads.items():
+        spec = EXTERNAL_API_SPECS[source]
+        manifest["sources"][spec.key] = {
+            **_download_manifest(download),
+            "display_name": spec.display_name,
+            "homepage_url": spec.homepage_url,
+            "source_kind": spec.source_kind,
+            "license_note": spec.license_note,
+            "explicit_redistribution_license": False,
+            "operator_confirmed_permissions": True,
         }
 
     for path in (runtime_path, runtime_zst, evidence_path, evidence_zst):

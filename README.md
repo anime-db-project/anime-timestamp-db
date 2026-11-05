@@ -262,6 +262,29 @@ anime-timestamp-db source-lookup --db timestamps.db --source baha --episode-key 
 
 Use the release manifests and SHA-256 checksums to pin compatible database versions. The timestamp release records the exact mapping database hash used during its build; mismatched snapshots may produce missed lookups or anchor redirects.
 
+## Additional external timestamp providers
+
+Optional crawlers and source-only checkpoint importers are available for
+[IntroDB](https://introdb.app/),
+[PublicMetaDB](https://publicmetadb.com/),
+[TheIntroDB](https://theintrodb.org/) and
+[IntroHater](https://introhater.com/). These community providers are
+acknowledged with official links and thanks to their contributors, **not
+represented as official sponsors or contributors to this repository**.
+Attribution alone is not permission to collect or redistribute their data.
+
+Every provider has its own request budget, per-second/minute/hour rate limits
+and polite randomized load spacing. HTTP 429 is retried once within the
+server's retry window; a further 429 ends the job, preserving collected
+checkpoints. IntroDB and IntroHater automated bulk jobs require explicit
+permission from their owners. PublicMetaDB uses a private API key. New source
+checkpoint data is only imported into released SQLite files after separate
+source-specific permission approval. Imported external episodes stay
+source-only unless independently proven.
+
+See [external source setup](docs/EXTERNAL_API_SOURCES.md) and
+[provider acknowledgment and rights](EXTERNAL_SOURCES_NOTICE.md).
+
 ## API collection and release imports
 
 Two separate collectors query AniSkip v2 (MAL/episode) and Anime Skip GraphQL (AniList/title episodes). They are rate-limited, checkpointable and can resume after interrupted runs. The crawler does not infer coverage of undiscovered episodes from a successful response about earlier episodes.

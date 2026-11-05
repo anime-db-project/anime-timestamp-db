@@ -118,6 +118,47 @@ OPEN_ANIME_TIMESTAMPS = SourceSpec(
     explicit_redistribution_license=False,
 )
 
+# External read APIs use explicit per-source operator approval; their
+# license metadata is not a grant for automated bulk collection or releases.
+EXTERNAL_API_SPECS = {
+    "introdb": SourceSpec(
+        "introdb-api",
+        "IntroDB",
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/crawler-state-introdb/checkpoints/introdb.json.gz",
+        "https://introdb.app/",
+        "timestamp",
+        "IntroDB prohibits bulk downloading/competing databases without permission.",
+        False,
+    ),
+    "publicmetadb": SourceSpec(
+        "publicmetadb-api",
+        "PublicMetaDB",
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/crawler-state-publicmetadb/checkpoints/publicmetadb.json.gz",
+        "https://publicmetadb.com/",
+        "timestamp",
+        "External key-required API; permission for dataset redistribution must be verified.",
+        False,
+    ),
+    "theintrodb": SourceSpec(
+        "theintrodb-api",
+        "TheIntroDB",
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/crawler-state-theintrodb/checkpoints/theintrodb.json.gz",
+        "https://theintrodb.org/",
+        "timestamp",
+        "Public read endpoint; no independent bulk redistribution license confirmed.",
+        False,
+    ),
+    "introhater": SourceSpec(
+        "introhater-api",
+        "IntroHater",
+        "https://raw.githubusercontent.com/anime-db-project/anime-timestamp-db/crawler-state-introhater/checkpoints/introhater.json.gz",
+        "https://introhater.com/",
+        "timestamp",
+        "Terms prohibit automated scraping without permission; duplicates may originate from other services.",
+        False,
+    ),
+}
+
 DEFAULT_BUILD_SOURCES = (
     ANIBRIDGE,
     ANIME_MAPPING_DB,

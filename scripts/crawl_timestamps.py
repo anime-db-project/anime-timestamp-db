@@ -15,15 +15,20 @@ import json
 import math
 import os
 import sqlite3
+from email.utils import parsedate_to_datetime
+from datetime import timezone
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from anime_timestamp_db.mapping_identity import mapping_database_metadata
+from scripts.source_policies import PacedLimiter, SourcePolicy, load_policies
+from scripts.external_sources import EXTERNAL_SOURCES
 
 DEFAULT_RPM = 70
 ANISKIP_TYPES = ("op", "ed", "mixed-op", "mixed-ed", "recap")
@@ -102,7 +107,9 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def load_catalog(path: Path) -> tuple[dict[int, dict[str, str]], dict[str, int]]:
+def load_catalog(
+    path: Path, providers: tuple[str, ...] = ("mal", "anilist")
+) -> tuple[dict[int, dict[str, str]], dict[str, int]]:
     """Read only explicit accepted node memberships from the published mapping DB."""
     mapping_database_metadata(path)
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
@@ -111,19 +118,26 @@ def load_catalog(path: Path) -> tuple[dict[int, dict[str, str]], dict[str, int]]
     external_owners: dict[tuple[str, str], int] = {}
     ambiguous_external_ids: set[tuple[str, str]] = set()
     candidates: dict[int, dict[str, str]] = defaultdict(dict)
+    if not providers or any(not x.isidentifier() for x in providers):
+        raise ValueError("invalid catalog providers")
+    placeholders = ", ".join("?" for _ in providers)
     try:
         for anchor, provider, external in conn.execute(
-            """SELECT e.anchor_id, n.provider, n.external_id
+            f"""SELECT e.anchor_id, n.provider, n.external_id
                FROM entities AS e
                JOIN entity_nodes AS en ON en.entity_id=e.entity_id
                JOIN nodes AS n ON n.id=en.node_id
-               WHERE n.provider IN ('mal', 'anilist')
-               ORDER BY e.anchor_id, n.provider, n.external_id"""
+               WHERE n.provider IN ({placeholders})
+               ORDER BY e.anchor_id, n.provider, n.external_id""",
+            providers,
         ):
             anchor = int(anchor)
             provider = str(provider)
             external = str(external).strip()
-            if positive_int(external) is None:
+            if provider == "imdb":
+                if not (external.startswith("tt") and external[2:].isdigit()):
+                    continue
+            elif positive_int(external) is None:
                 continue
             native_key = (provider, external)
             owner = external_owners.setdefault(native_key, anchor)
@@ -178,7 +192,9 @@ def mal_episode_hints(path: Path | None) -> dict[int, set[int]]:
 
 
 class RateLimited(Exception):
-    pass
+    def __init__(self, message: str, *, retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class BadUpstreamResponse(Exception):
@@ -214,36 +230,79 @@ class Limiter:
         self.calls.append(time.monotonic())
 
 
+def _retry_after(headers: httpx.Headers, default: float) -> float:
+    """Interpret published Retry-After and usage bucket resets conservatively."""
+    value = headers.get("retry-after")
+    if value:
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            try:
+                dt = parsedate_to_datetime(value)
+                return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+            except (ValueError, TypeError, OverflowError):
+                pass
+    if headers.get("x-usagelimit-remaining") == "0":
+        try:
+            return max(default, float(headers.get("x-usagelimit-reset", default)))
+        except ValueError:
+            return default
+    if headers.get("x-ratelimit-remaining") == "0":
+        try:
+            value = float(headers.get("x-ratelimit-reset", default))
+            # APIs differ: some return epoch time, others a duration.
+            return max(0.0, value - time.time() if value > 1_000_000_000 else value)
+        except ValueError:
+            return default
+    return default
+
+
 async def request_json(
     client: httpx.AsyncClient,
-    limiter: Limiter,
+    limiter: Limiter | PacedLimiter,
     budget: list[int],
     method: str,
     url: str,
+    *,
+    allow_list: bool = False,
+    retry_429_wait_seconds: float = 12,
+    max_429_wait_seconds: float = 45,
     **kwargs: Any,
-) -> tuple[int, dict[str, Any]]:
-    for attempt in range(3):
+) -> tuple[int, dict[str, Any] | list[Any]]:
+    """Each retry consumes a request. One 429 retry only, then stop safely."""
+    rate_retried = False
+    transient = 0
+    while True:
         if budget[0] <= 0:
-            raise BudgetExhausted("request budget exhausted")
+            raise BudgetExhausted("request budget exhausted, including retries")
         await limiter.wait()
         budget[0] -= 1
         try:
             response = await client.request(method, url, **kwargs)
         except httpx.TransportError as error:
-            if attempt == 2:
+            transient += 1
+            if transient >= 3:
                 raise BadUpstreamResponse(
                     f"transport: {type(error).__name__}"
                 ) from error
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(2 ** (transient - 1))
             continue
-        if response.status_code in (429, 403):
-            raise RateLimited(
-                f"HTTP {response.status_code}; Retry-After={response.headers.get('retry-after', 'not supplied')}"
-            )
+        if response.status_code == 429:
+            delay = _retry_after(response.headers, retry_429_wait_seconds)
+            if rate_retried or delay > max_429_wait_seconds or budget[0] <= 0:
+                raise RateLimited(
+                    f"HTTP 429; recommended wait {delay:.1f}s", retry_after=delay
+                )
+            rate_retried = True
+            await asyncio.sleep(max(0.1, delay))
+            continue
+        if response.status_code == 403:
+            raise BadUpstreamResponse("HTTP 403: access forbidden; no retry")
         if response.status_code >= 500:
-            if attempt == 2:
+            transient += 1
+            if transient >= 3:
                 raise BadUpstreamResponse(f"HTTP {response.status_code}")
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(2 ** (transient - 1))
             continue
         if response.status_code not in (200, 404):
             raise BadUpstreamResponse(
@@ -252,11 +311,15 @@ async def request_json(
         try:
             payload = response.json()
         except ValueError as error:
-            raise BadUpstreamResponse("non-JSON response") from error
-        if not isinstance(payload, dict):
-            raise BadUpstreamResponse("response is not an object")
+            if response.status_code == 404:
+                payload = {}
+            else:
+                raise BadUpstreamResponse("non-JSON response") from error
+        if not isinstance(payload, dict) and not (
+            allow_list and isinstance(payload, list)
+        ):
+            raise BadUpstreamResponse("unexpected upstream JSON schema")
         return response.status_code, payload
-    raise AssertionError("unreachable")
 
 
 def parse_aniskip(
@@ -551,6 +614,13 @@ async def crawl(
     client: httpx.AsyncClient | None = None,
 ) -> tuple[dict[str, Any], bool]:
     source = args.source
+    if source in EXTERNAL_SOURCES:
+        from scripts.crawl_external import crawl_external
+
+        return await crawl_external(args, client=client)
+    policy = load_policies()[source]
+    if getattr(args, "rpm", None) is not None:
+        policy = replace(policy, per_minute=min(args.rpm, policy.per_minute))
     catalog, catalog_stats = load_catalog(args.mapping_db)
     only_anchor = getattr(args, "only_anchor", None)
     if only_anchor is not None:
@@ -613,8 +683,14 @@ async def crawl(
         "initial_unchecked_before_run": sum(
             item[0] not in records for item in all_candidates
         ),
-        "rpm": args.rpm,
-        "budget": args.max_requests,
+        "rpm": min(getattr(args, "rpm", None) or policy.per_minute, policy.per_minute),
+        "limits": {
+            "per_second": policy.per_second,
+            "per_minute": policy.per_minute,
+            "per_hour": policy.per_hour,
+            "delay_seconds": policy.delay_seconds,
+        },
+        "budget": min(args.max_requests or policy.max_requests, policy.max_requests),
         "attempted": 0,
         "found": 0,
         "missing": 0,
@@ -642,8 +718,8 @@ async def crawl(
         ]
         return report, True
 
-    remaining = [args.max_requests]
-    limiter = Limiter(args.rpm)
+    remaining = [min(args.max_requests or policy.max_requests, policy.max_requests)]
+    limiter = PacedLimiter(policy)
     owns_client = client is None
     if client is None:
         client = httpx.AsyncClient(
@@ -670,6 +746,8 @@ async def crawl(
                         "GET",
                         url,
                         params=params,
+                        retry_429_wait_seconds=policy.retry_429_wait_seconds,
+                        max_429_wait_seconds=policy.max_429_wait_seconds,
                     )
                     if status == 404 and payload.get("found") is not False:
                         raise BadUpstreamResponse("unexpected AniSkip 404")
@@ -691,6 +769,8 @@ async def crawl(
                             "operationName": "AnimeTimestampCrawler",
                             "variables": {"id": native_id},
                         },
+                        retry_429_wait_seconds=policy.retry_429_wait_seconds,
+                        max_429_wait_seconds=policy.max_429_wait_seconds,
                     )
                     if status != 200:
                         raise BadUpstreamResponse(
@@ -737,8 +817,18 @@ async def crawl(
                     )
                 report["attempted"] += 1
             except BudgetExhausted:
+                report["stopped_reason"] = "request_budget_exhausted"
                 break
-            except (BadUpstreamResponse, RateLimited, ValueError) as error:
+            except RateLimited as error:
+                report["stopped_reason"] = "rate_limited_after_retry"
+                report["retry_after_seconds"] = error.retry_after
+                report["warnings"].append(
+                    {"candidate": key, "type": "RateLimited", "message": str(error)}
+                )
+                # This is a graceful partial run: do not restart bootstrap
+                # immediately and never throw away successful checkpoint rows.
+                break
+            except (BadUpstreamResponse, ValueError) as error:
                 report["errors"].append(
                     {
                         "candidate": key,
@@ -797,15 +887,25 @@ async def crawl(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", choices=("aniskip", "anime_skip"), required=True)
+    parser.add_argument("--source", choices=tuple(load_policies()), required=True)
     parser.add_argument("--mapping-db", type=Path, required=True)
     parser.add_argument("--timestamps-db", type=Path, default=None)
     parser.add_argument(
         "--state-dir", type=Path, default=Path(".build-cache/crawler-state")
     )
     parser.add_argument("--output-dir", type=Path, default=Path("crawler-output"))
-    parser.add_argument("--rpm", type=int, default=DEFAULT_RPM)
-    parser.add_argument("--max-requests", type=int, default=1000)
+    parser.add_argument(
+        "--rpm",
+        type=int,
+        default=None,
+        help="Optional lower per-minute cap; policy always applies",
+    )
+    parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=None,
+        help="Optional lower per-run budget; policy always applies",
+    )
     parser.add_argument(
         "--export-only",
         action="store_true",
@@ -825,9 +925,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     args.anime_skip_client_id = os.getenv("ANIME_SKIP_CLIENT_ID", "").strip()
-    if not (1 <= args.rpm <= 120):
-        parser.error("--rpm must be from 1 to 120")
-    if args.max_requests < 1 or args.unknown_episodes < 1 or args.max_episodes < 1:
+    args.publicmetadb_api_key = os.getenv("PUBLICMETADB_API_KEY", "").strip()
+    policy = load_policies()[args.source]
+    if (
+        policy.requires_bulk_permission
+        and os.getenv("BULK_SOURCE_PERMISSION_" + args.source.upper(), "")
+        .strip()
+        .lower()
+        != "true"
+        and not (args.dry_run or args.export_only)
+    ):
+        parser.error(
+            f"{args.source} prohibits automated bulk retrieval without permission; "
+            f"set BULK_SOURCE_PERMISSION_{args.source.upper()}=true only after obtaining it"
+        )
+    if (
+        args.source == "publicmetadb"
+        and not args.publicmetadb_api_key
+        and not (args.dry_run or args.export_only)
+    ):
+        parser.error("PUBLICMETADB_API_KEY required for PublicMetaDB")
+    if args.rpm is not None and not (1 <= args.rpm <= policy.per_minute):
+        parser.error("--rpm must be within the source's documented policy")
+    if args.max_requests is not None and not (
+        1 <= args.max_requests <= policy.max_requests
+    ):
+        parser.error("--max-requests must be within the source's per-run quota")
+    if args.unknown_episodes < 1 or args.max_episodes < 1:
         parser.error("request and episode bounds must be positive")
     if args.positive_ttl_days < 1 or args.negative_ttl_days < 1:
         parser.error("TTLs must be positive")

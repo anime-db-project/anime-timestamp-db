@@ -57,7 +57,9 @@ def _github(method: str, endpoint: str, payload: dict | None = None) -> dict | N
 
 
 def _branch(source: str) -> str:
-    if source not in ("aniskip", "anime_skip"):
+    from scripts.source_policies import load_policies
+
+    if source not in load_policies():
         raise ValueError(f"Unknown source {source!r}")
     return BRANCH_PREFIX + source
 

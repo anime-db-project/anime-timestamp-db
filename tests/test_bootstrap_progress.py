@@ -71,6 +71,18 @@ class BootstrapProgressTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stalled"):
             bootstrap_plan(self.root, 3)
 
+    def test_graceful_429_stops_bootstrap_without_discarding_checkpoint(self) -> None:
+        self.report("aniskip", unseen=500, attempted=10)
+        self.report("anime_skip", unseen=1000, attempted=10)
+        path = self.root / "anime_skip" / "anime_skip-report.json"
+        report = json.loads(path.read_text())
+        report["stopped_reason"] = "rate_limited_after_retry"
+        report["retry_after_seconds"] = 60
+        path.write_text(json.dumps(report))
+        result = bootstrap_plan(self.root, 42)
+        self.assertEqual(result["continue"], "false")
+        self.assertEqual(result["rate_limited_source"], "anime_skip")
+
     def test_real_api_error_stops_chain(self) -> None:
         self.report("aniskip", unseen=2)
         self.report("anime_skip", unseen=5, errors=[{"type": "RateLimited"}])

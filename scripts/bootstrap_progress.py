@@ -24,6 +24,14 @@ def bootstrap_plan(root: Path, remaining_runs: int) -> dict[str, object]:
             raise ValueError(f"Invalid source identity in {matches[0]}")
         if report.get("errors"):
             raise ValueError(f"Fatal {source} crawler error: {report['errors']}")
+        if report.get("stopped_reason") == "rate_limited_after_retry":
+            # Partial checkpoint has been persisted. Do not re-dispatch a
+            # bootstrap job that will hit the same provider limit.
+            return {
+                "continue": "false",
+                "next_runs": remaining_runs - 1,
+                "rate_limited_source": source,
+            }
         pending = report.get("initial_unchecked_after_run")
         if isinstance(pending, bool) or not isinstance(pending, int) or pending < 0:
             raise ValueError(f"Invalid initial_unchecked_after_run for {source}")

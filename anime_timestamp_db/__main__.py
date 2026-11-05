@@ -56,6 +56,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Operator confirms rights/permissions for redistribution of API datasets",
     )
 
+    build_cmd.add_argument(
+        "--external-checkpoint-dir",
+        type=Path,
+        help="Path to independently authorized third-party API checkpoints",
+    )
+    build_cmd.add_argument(
+        "--external-source",
+        action="append",
+        default=[],
+        choices=["introdb", "publicmetadb", "theintrodb", "introhater"],
+        help="An individually permissioned external source (repeat per source)",
+    )
+    build_cmd.add_argument(
+        "--allow-external-data-redistribution",
+        action="store_true",
+        help="Operator confirms independent permission to publish each selected source",
+    )
+
     audit_cmd = subparsers.add_parser(
         "audit", help="Audit runtime + evidence databases"
     )
@@ -128,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
             consensus_tolerance_ms=args.consensus_tolerance_ms,
             api_checkpoint_dir=args.api_checkpoint_dir,
             allow_api_redistribution=args.allow_api_redistribution,
+            external_checkpoint_dir=args.external_checkpoint_dir,
+            external_sources=tuple(args.external_source),
+            allow_external_data_redistribution=args.allow_external_data_redistribution,
         )
         print(_json(manifest))
         return 0
