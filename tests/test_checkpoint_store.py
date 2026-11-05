@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import gzip
+import io
 import json
 import os
 import subprocess
@@ -69,6 +71,43 @@ class CheckpointStoreTests(unittest.TestCase):
             check=True,
         )
         self.assertEqual(result.stdout.strip(), "crawler-state-aniskip")
+
+    def test_checkpoint_cli_accepts_every_crawler_source(self) -> None:
+        expected = (
+            "aniskip",
+            "anime_skip",
+            "introdb",
+            "publicmetadb",
+            "theintrodb",
+            "introhater",
+        )
+        self.assertEqual(store.SOURCE_NAMES, expected)
+        script = Path(__file__).resolve().parents[1] / "scripts/checkpoint_store.py"
+        help_result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        for source in expected:
+            with self.subTest(source=source):
+                self.assertIn(source, help_result.stdout)
+                with (
+                    patch.object(
+                        sys,
+                        "argv",
+                        ["checkpoint_store.py", "restore", "--source", source],
+                    ),
+                    patch.object(
+                        store, "restore", return_value={"source": source}
+                    ) as restore_mock,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(store.main(), 0)
+                restore_mock.assert_called_once_with(
+                    source, Path(".build-cache/crawler-state") / (source + ".json.gz")
+                )
 
     def test_restore_persist_noop_and_backup(self) -> None:
         self.path.write_bytes(self.data)
