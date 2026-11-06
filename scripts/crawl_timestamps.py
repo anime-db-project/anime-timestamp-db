@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 from anime_timestamp_db.mapping_identity import mapping_database_metadata
+from scripts.http_identity import crawler_headers
 from scripts.source_policies import PacedLimiter, SourcePolicy, load_policies
 from scripts.external_sources import EXTERNAL_SOURCES
 
@@ -777,7 +778,7 @@ async def crawl(
         client = httpx.AsyncClient(
             timeout=httpx.Timeout(20),
             follow_redirects=True,
-            headers={"User-Agent": "anime-timestamp-db-crawler/0.1"},
+            headers=crawler_headers(getattr(args, "user_agent", None)),
             limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
         )
     success = True
@@ -973,11 +974,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--unknown-episodes", type=int, default=2)
     parser.add_argument("--positive-ttl-days", type=int, default=30)
     parser.add_argument("--negative-ttl-days", type=int, default=14)
+    parser.add_argument(
+        "--user-agent",
+        default=os.getenv("TIMESTAMP_CRAWLER_USER_AGENT", ""),
+        help="Optional identifying User-Agent; default identifies the project",
+    )
     parser.add_argument("--anime-skip-url", default="https://anime-skip.com/api")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     args.anime_skip_client_id = os.getenv("ANIME_SKIP_CLIENT_ID", "").strip()
     args.publicmetadb_api_key = os.getenv("PUBLICMETADB_API_KEY", "").strip()
+    try:
+        crawler_headers(args.user_agent)
+    except ValueError as error:
+        parser.error(str(error))
     policy = load_policies()[args.source]
     if (
         policy.requires_bulk_permission

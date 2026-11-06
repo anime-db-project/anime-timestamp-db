@@ -46,6 +46,21 @@ once. A second 429 ends the job gracefully, marks `stopped_reason`, saves
 the partial JSONL and durable source checkpoint, and disables immediate
 bootstrap chaining. A 403 is an access failure and is never retried.
 
+## HTTP client identity and Cloudflare access
+
+All six crawlers send a consistent, project-identifying HTTP
+`User-Agent: anime-timestamp-db/0.3 (+https://github.com/anime-db-project/anime-timestamp-db)`
+and `Accept: application/json`. To set your own truthful, identifying
+User-Agent, configure the optional GitHub Actions repository **variable**
+`TIMESTAMP_CRAWLER_USER_AGENT` or use `--user-agent` in the CLI.
+PublicMetaDB credentials remain in the `PUBLICMETADB_API_KEY` Actions **secret**.
+
+Changing User-Agent **does not bypass Cloudflare Managed Challenges**.
+On a 403 HTML challenge, the crawler stops without trying CAPTCHA solvers
+or browser impersonation. Request an approved machine-to-machine API
+integration or an authorized WAF exception from the provider. Send the
+`cf_ray` value printed in the report; do not send the API key.
+
 ## Authorization and automated workflows
 
 GitHub Actions uses the **same** `config/crawler_sources.json` as the

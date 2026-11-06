@@ -20,6 +20,7 @@ from scripts.external_sources import (
     make_request,
     parse_segments,
 )
+from scripts.http_identity import crawler_headers
 from scripts.source_policies import PacedLimiter, load_policies
 
 
@@ -242,7 +243,7 @@ async def crawl_external(args, *, client: httpx.AsyncClient | None = None):
         client = httpx.AsyncClient(
             timeout=httpx.Timeout(20),
             follow_redirects=False,
-            headers={"User-Agent": "anime-timestamp-db-crawler/0.2"},
+            headers=crawler_headers(getattr(args, "user_agent", None)),
             limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
         )
     success = True

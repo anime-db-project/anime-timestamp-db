@@ -58,6 +58,7 @@ jobs:
     env:
       ANIME_SKIP_CLIENT_ID: ${{ secrets.ANIME_SKIP_CLIENT_ID }}
       PUBLICMETADB_API_KEY: ${{ secrets.PUBLICMETADB_API_KEY }}
+      TIMESTAMP_CRAWLER_USER_AGENT: ${{ vars.TIMESTAMP_CRAWLER_USER_AGENT }}
       SOURCE: ${{ matrix.source }}
       CRAWL_MODE: ${{ inputs.mode || 'maintenance' }}
       REQUEST_LIMIT: ${{ inputs.max_requests || '' }}
