@@ -1,17 +1,15 @@
 name: Database build
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * *"
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: timestamp-db-build
+  group: timestamp-db-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
