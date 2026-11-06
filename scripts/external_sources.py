@@ -87,6 +87,8 @@ def make_request(
             raise ValueError("PUBLICMETADB_API_KEY is required")
         headers["Authorization"] = "Bearer " + api_key
         params["tmdb_id"] = title_id
+        # The API now requires the TMDB namespace as well as the TMDB ID.
+        params["media_type"] = "tv"
     else:
         params[
             {"tvdb": "tvdb_id", "imdb": "imdb_id", "tmdb_tv": "tmdb_id"}[provider]

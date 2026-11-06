@@ -127,7 +127,7 @@ lineages are labeled with their original upstream origin.
 
 - IntroDB: IMDb TV ID + season + episode; `intro`, `recap`, `outro`,
   `post_credits`, possible explicit absence flags.
-- PublicMetaDB: TMDB TV ID + season + episode; Bearer authorization;
+- PublicMetaDB: TMDB TV ID + media_type=tv + season + episode; Bearer authorization;
   explicit bounded `*_start_ms`/`*_end_ms` intervals only.
 - TheIntroDB API **v4**: TVDB ID (fallback IMDb/TMDB TV), season + episode;
   arrays of `intro`, `recap`, `credits`, `preview`; some ends may
