@@ -40,23 +40,23 @@ These are separate metrics and must not be added as unique anime or scenes. Sour
 
 | Metric | Value |
 | --- | ---: |
-| Median | **0.365 ms** |
-| p95 | **0.405 ms** |
-| p99 | **0.422 ms** |
-| Sequential queries/s | **2,705** |
+| Median | **0.363 ms** |
+| p95 | **0.407 ms** |
+| p99 | **0.445 ms** |
+| Sequential queries/s | **2,704** |
 
 **Consensus intervals**
 
 | Metric | Value |
 | --- | ---: |
-| Median | **0.338 ms** |
-| p95 | **0.378 ms** |
-| p99 | **0.537 ms** |
-| Sequential queries/s | **2,894** |
+| Median | **0.336 ms** |
+| p95 | **0.357 ms** |
+| p99 | **0.390 ms** |
+| Sequential queries/s | **2,948** |
 
 Warm-cache sequential read-only queries on released SQLite, Linux / Python 3.12; 250 sampled episodes × 2 rounds. These are local lookup measurements, not network/API latency.
 
-Release snapshot: **2026-11-06**, [v2026.11.06.17](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.06.17). [Current release manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Release snapshot: **2026-11-06**, [v2026.11.06.18](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.06.18). [Current release manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
