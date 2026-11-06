@@ -19,13 +19,17 @@ class PreflightTests(unittest.TestCase):
                 enabled = {
                     **self.policies,
                     source: replace(
-                        self.policies[source], requires_bulk_permission=False
+                        self.policies[source],
+                        requires_bulk_permission=False,
+                        enabled=True,
                     ),
                 }
                 blocked = {
                     **self.policies,
                     source: replace(
-                        self.policies[source], requires_bulk_permission=True
+                        self.policies[source],
+                        requires_bulk_permission=True,
+                        enabled=True,
                     ),
                 }
                 self.assertTrue(decide(source, env={}, policies=enabled).enabled)
@@ -33,6 +37,19 @@ class PreflightTests(unittest.TestCase):
                 self.assertFalse(result.enabled)
                 self.assertFalse(result.fatal)
                 self.assertIn("requires upstream", result.reason)
+
+    def test_theintrodb_is_disabled_without_being_deleted(self) -> None:
+        policy = self.policies["theintrodb"]
+        self.assertFalse(policy.enabled)
+        disabled = decide("theintrodb", env={}, policies=self.policies)
+        self.assertFalse(disabled.enabled)
+        self.assertFalse(disabled.fatal)
+        self.assertIn("enabled=false", disabled.reason)
+        enabled = {
+            **self.policies,
+            "theintrodb": replace(policy, enabled=True),
+        }
+        self.assertTrue(decide("theintrodb", env={}, policies=enabled).enabled)
 
     def test_publicmetadb_needs_real_secret_not_obsolete_approval_variable(
         self,

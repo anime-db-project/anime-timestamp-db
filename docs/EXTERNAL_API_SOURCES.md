@@ -28,7 +28,9 @@ Edit `config/crawler_sources.json` to tune **each provider independently**:
 - `retry_429_wait_seconds`: fallback wait if Retry-After is absent;
 - `max_429_wait_seconds`: ceiling for in-job waiting; longer provider
   cooldowns end the run immediately with a saved checkpoint;
-- `requires_bulk_permission`: provider-specific explicit approval gate.
+- `requires_bulk_permission`: provider-specific explicit approval gate;
+- `enabled`: optional operational switch, default true; when set to false,
+  GitHub Actions skips that provider without deleting its adapter or checkpoint.
 
 TheIntroDB documented anonymous rate is 30 per 10 seconds plus usage limits,
 including a separate quota for repeatedly requesting the same media.
@@ -45,6 +47,26 @@ header, waits once (if within the configured cap and budget), then retries
 once. A second 429 ends the job gracefully, marks `stopped_reason`, saves
 the partial JSONL and durable source checkpoint, and disables immediate
 bootstrap chaining. A 403 is an access failure and is never retried.
+
+## TheIntroDB v4 and the paused GitHub crawler
+
+TheIntroDB v4 public `GET https://api.theintrodb.org/v4/media` needs no key.
+Use a `tvdb_id` (or fallback `tmdb_id`/`imdb_id`) with both `season` and
+`episode` for TV; there is no `type=tv` parameter. The omitted `mapping`
+means TVDB's default episode order. Its raw response contains `intro`,
+`recap`, `credits` and `preview` arrays of timestamp ranges. See the
+[official v4 OpenAPI specification](https://theintrodb.org/openapi.yaml).
+
+The adapter is compatible with this request contract; a real v4 sample
+returned HTTP 200 from a separately hosted server, while GitHub-hosted
+runners received an HTML Cloudflare 403 at the first request. Since that
+challenge prevents access before the API handles the query, the automatic
+TheIntroDB job is temporarily disabled via
+`config/crawler_sources.json` → `theintrodb.enabled=false`.
+The provider implementation, rate policy, and existing checkpoints stay
+intact. Re-enable it only after establishing approved automated access,
+e.g. a WAF exception agreed with the provider; do not attempt CAPTCHA
+solving or browser/TLS fingerprint impersonation.
 
 ## HTTP client identity and Cloudflare access
 

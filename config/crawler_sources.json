@@ -36,7 +36,8 @@
     ],
     "retry_429_wait_seconds": 12,
     "max_429_wait_seconds": 45,
-    "requires_bulk_permission": false
+    "requires_bulk_permission": false,
+    "enabled": false
   },
   "publicmetadb": {
     "max_requests": 2000,

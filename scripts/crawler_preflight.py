@@ -34,6 +34,13 @@ def decide(
     policy = (policies or load_policies())[source]
     environ = os.environ if env is None else env
 
+    if not policy.enabled:
+        return PreflightDecision(
+            False,
+            reason=f"{source}: automatic crawling disabled in "
+            "config/crawler_sources.json (enabled=false)",
+        )
+
     # A repository maintainer sets this config after confirming permission.
     # It is not possible to obtain permission by adding a source credit.
     if policy.requires_bulk_permission:

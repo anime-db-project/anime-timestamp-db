@@ -28,10 +28,14 @@ class SourcePolicy:
     retry_429_wait_seconds: int
     max_429_wait_seconds: int
     requires_bulk_permission: bool
+    enabled: bool = True
 
     @classmethod
     def from_row(cls, source: str, row: dict) -> SourcePolicy:
         lo, hi = row["delay_seconds"]
+        enabled = row.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"{source}: enabled must be a boolean")
         result = cls(
             source=source,
             max_requests=int(row["max_requests"]),
@@ -42,6 +46,7 @@ class SourcePolicy:
             retry_429_wait_seconds=int(row["retry_429_wait_seconds"]),
             max_429_wait_seconds=int(row["max_429_wait_seconds"]),
             requires_bulk_permission=bool(row["requires_bulk_permission"]),
+            enabled=enabled,
         )
         if not (1 <= result.max_requests <= 5000):
             raise ValueError(f"{source}: invalid per-run request budget")
