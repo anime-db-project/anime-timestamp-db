@@ -17,22 +17,22 @@ Herramienta independiente y base SQLite de segmentos saltables de anime — aper
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## El dataset en cifras
 
-**57,807 episodios normalizados · 224,337 intervalos · 129,864 consensos**
+**58,008 episodios normalizados · 227,033 intervalos · 130,970 consensos**
 
 Son métricas diferentes y no deben sumarse como títulos o escenas. Los intervalos nativos sin resolver se pueden consultar, pero no cuentan como episodios normalizados.
 
 | Indicador | Valor |
 | --- | ---: |
-| Títulos AMDB con intervalos | **4,387** |
-| Episodios normalizados | **57,807** |
-| Intervalos asociados | **224,337** |
-| Intervalos nativos no resueltos | **56,625** |
-| Intervalos de consenso | **129,864** |
-| Relaciones de consenso | **194,442** |
-| Registros de evidencia | **322,333** |
+| Títulos AMDB con intervalos | **4,502** |
+| Episodios normalizados | **58,008** |
+| Intervalos asociados | **227,033** |
+| Intervalos nativos no resueltos | **65,432** |
+| Intervalos de consenso | **130,970** |
+| Relaciones de consenso | **197,113** |
+| Registros de evidencia | **333,836** |
 | Instantáneas de fuentes | **8** |
-| Tamaño SQLite | **57.6 MiB** |
-| SQLite comprimido | **15.2 MiB** |
+| Tamaño SQLite | **60.1 MiB** |
+| SQLite comprimido | **15.6 MiB** |
 
 ### Rendimiento de búsqueda local
 
@@ -40,23 +40,23 @@ Son métricas diferentes y no deben sumarse como títulos o escenas. Los interva
 
 | Indicador | Valor |
 | --- | ---: |
-| Mediana | **0.781 ms** |
-| p95 | **0.926 ms** |
-| p99 | **1.314 ms** |
-| Consultas secuenciales/s | **1,239** |
+| Mediana | **0.365 ms** |
+| p95 | **0.405 ms** |
+| p99 | **0.422 ms** |
+| Consultas secuenciales/s | **2,705** |
 
 **Intervalos de consenso**
 
 | Indicador | Valor |
 | --- | ---: |
-| Mediana | **0.725 ms** |
-| p95 | **0.757 ms** |
-| p99 | **0.778 ms** |
-| Consultas secuenciales/s | **1,373** |
+| Mediana | **0.338 ms** |
+| p95 | **0.378 ms** |
+| p99 | **0.537 ms** |
+| Consultas secuenciales/s | **2,894** |
 
 Consultas secuenciales con caché caliente sobre SQLite publicada, Linux / Python 3.12; 250 episodios × 2 rondas. No representan latencia de red/API.
 
-Versión de referencia: **2026-11-05**, [v2026.11.05.16](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.16). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Versión de referencia: **2026-11-06**, [v2026.11.06.17](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.06.17). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
