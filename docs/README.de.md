@@ -40,23 +40,23 @@ Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene B
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Median | **0.783 ms** |
-| p95 | **0.874 ms** |
-| p99 | **1.335 ms** |
-| Sequentielle Abfragen/s | **1,239** |
+| Median | **0.384 ms** |
+| p95 | **0.420 ms** |
+| p99 | **0.448 ms** |
+| Sequentielle Abfragen/s | **2,579** |
 
 **Konsensintervalle**
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Median | **0.724 ms** |
-| p95 | **0.761 ms** |
-| p99 | **0.793 ms** |
-| Sequentielle Abfragen/s | **1,372** |
+| Median | **0.357 ms** |
+| p95 | **0.380 ms** |
+| p99 | **0.417 ms** |
+| Sequentielle Abfragen/s | **2,779** |
 
 Sequentielle Abfragen auf Release-SQLite mit warmem Cache, Linux / Python 3.12; 250 Folgen × 2 Runden. Keine API-/Netzwerklatenz.
 
-Release-Snapshot: **2026-11-06**, [v2026.11.06.22](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.06.22). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Release-Snapshot: **2026-11-07**, [v2026.11.07.23](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.07.23). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
