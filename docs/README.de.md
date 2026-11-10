@@ -17,22 +17,22 @@ Ein eigenständiges SQLite-Projekt für überspringbare Anime-Segmente wie Openi
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Datenbank in Zahlen
 
-**58,095 normalisierte Folgen · 235,340 zugeordnete Intervalle · 131,723 Konsensintervalle**
+**58,870 normalisierte Folgen · 238,932 zugeordnete Intervalle · 134,356 Konsensintervalle**
 
 Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene Bereiche bleiben abrufbar, gelten aber nicht als normalisierte Episoden.
 
 | Kennzahl | Wert |
 | --- | ---: |
-| AMDB-Titel mit Zeitstempeln | **4,631** |
-| Normalisierte Folgen | **58,095** |
-| Zugeordnete Intervalle | **235,340** |
-| Quelleneigene Intervalle | **77,609** |
-| Konsensintervalle | **131,723** |
-| Konsensmitgliedschaften | **205,415** |
-| Evidenzrecords | **354,356** |
+| AMDB-Titel mit Zeitstempeln | **4,643** |
+| Normalisierte Folgen | **58,870** |
+| Zugeordnete Intervalle | **238,932** |
+| Quelleneigene Intervalle | **78,019** |
+| Konsensintervalle | **134,356** |
+| Konsensmitgliedschaften | **209,007** |
+| Evidenzrecords | **358,508** |
 | Quell-Snapshots | **8** |
-| SQLite-Größe | **64.2 MiB** |
-| Komprimierte SQLite-Größe | **16.3 MiB** |
+| SQLite-Größe | **65.1 MiB** |
+| Komprimierte SQLite-Größe | **16.6 MiB** |
 
 ### Lokale Abfrageleistung
 
@@ -40,23 +40,23 @@ Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene B
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Median | **0.780 ms** |
-| p95 | **0.842 ms** |
-| p99 | **0.861 ms** |
-| Sequentielle Abfragen/s | **1,273** |
+| Median | **0.586 ms** |
+| p95 | **0.638 ms** |
+| p99 | **0.670 ms** |
+| Sequentielle Abfragen/s | **1,686** |
 
 **Konsensintervalle**
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Median | **0.734 ms** |
-| p95 | **0.799 ms** |
-| p99 | **1.259 ms** |
-| Sequentielle Abfragen/s | **1,325** |
+| Median | **0.558 ms** |
+| p95 | **0.653 ms** |
+| p99 | **0.674 ms** |
+| Sequentielle Abfragen/s | **1,720** |
 
 Sequentielle Abfragen auf Release-SQLite mit warmem Cache, Linux / Python 3.12; 250 Folgen × 2 Runden. Keine API-/Netzwerklatenz.
 
-Release-Snapshot: **2026-11-09**, [v2026.11.09.25](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.09.25). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Release-Snapshot: **2026-11-10**, [v2026.11.10.26](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.10.26). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
