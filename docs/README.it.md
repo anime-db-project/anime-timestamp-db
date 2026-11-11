@@ -17,22 +17,22 @@ Strumento indipendente e database SQLite di segmenti saltabili degli episodi ani
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Il database in numeri
 
-**58,870 episodi normalizzati · 238,932 intervalli · 134,356 consensi**
+**58,925 episodi normalizzati · 240,378 intervalli · 134,495 consensi**
 
 Sono metriche diverse, da non sommare come titoli o scene. Gli intervalli nativi non risolti sono consultabili ma non contano come episodi normalizzati.
 
 | Indicatore | Valore |
 | --- | ---: |
-| Titoli AMDB con intervalli | **4,643** |
-| Episodi normalizzati | **58,870** |
-| Intervalli associati | **238,932** |
-| Intervalli nativi non risolti | **78,019** |
-| Intervalli di consenso | **134,356** |
-| Collegamenti del consenso | **209,007** |
-| Record di prova | **358,508** |
+| Titoli AMDB con intervalli | **4,650** |
+| Episodi normalizzati | **58,925** |
+| Intervalli associati | **240,378** |
+| Intervalli nativi non risolti | **78,362** |
+| Intervalli di consenso | **134,495** |
+| Collegamenti del consenso | **210,459** |
+| Record di prova | **360,376** |
 | Snapshot delle fonti | **8** |
-| Dimensione SQLite | **65.1 MiB** |
-| SQLite compresso | **16.6 MiB** |
+| Dimensione SQLite | **65.4 MiB** |
+| SQLite compresso | **16.7 MiB** |
 
 ### Prestazioni delle query locali
 
@@ -40,23 +40,23 @@ Sono metriche diverse, da non sommare come titoli o scene. Gli intervalli nativi
 
 | Indicatore | Valore |
 | --- | ---: |
-| Mediana | **0.586 ms** |
-| p95 | **0.638 ms** |
-| p99 | **0.670 ms** |
-| Query sequenziali/s | **1,686** |
+| Mediana | **0.796 ms** |
+| p95 | **0.881 ms** |
+| p99 | **1.101 ms** |
+| Query sequenziali/s | **1,238** |
 
 **Intervalli di consenso**
 
 | Indicatore | Valore |
 | --- | ---: |
-| Mediana | **0.558 ms** |
-| p95 | **0.653 ms** |
-| p99 | **0.674 ms** |
-| Query sequenziali/s | **1,720** |
+| Mediana | **0.768 ms** |
+| p95 | **0.801 ms** |
+| p99 | **0.820 ms** |
+| Query sequenziali/s | **1,298** |
 
 Query sequenziali con cache calda sulla SQLite pubblicata, Linux / Python 3.12; 250 episodi × 2 round. Non misura la latenza API.
 
-Snapshot della release: **2026-11-10**, [v2026.11.10.26](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.10.26). [Manifest attuale](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Snapshot della release: **2026-11-11**, [v2026.11.11.27](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.11.27). [Manifest attuale](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
