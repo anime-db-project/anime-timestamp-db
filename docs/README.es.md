@@ -17,19 +17,19 @@ Herramienta independiente y base SQLite de segmentos saltables de anime — aper
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## El dataset en cifras
 
-**59,060 episodios normalizados · 244,739 intervalos · 134,964 consensos**
+**59,126 episodios normalizados · 245,158 intervalos · 135,117 consensos**
 
 Son métricas diferentes y no deben sumarse como títulos o escenas. Los intervalos nativos sin resolver se pueden consultar, pero no cuentan como episodios normalizados.
 
 | Indicador | Valor |
 | --- | ---: |
-| Títulos AMDB con intervalos | **4,679** |
-| Episodios normalizados | **59,060** |
-| Intervalos asociados | **244,739** |
-| Intervalos nativos no resueltos | **81,438** |
-| Intervalos de consenso | **134,964** |
-| Relaciones de consenso | **217,422** |
-| Registros de evidencia | **368,129** |
+| Títulos AMDB con intervalos | **4,690** |
+| Episodios normalizados | **59,126** |
+| Intervalos asociados | **245,158** |
+| Intervalos nativos no resueltos | **81,375** |
+| Intervalos de consenso | **135,117** |
+| Relaciones de consenso | **217,838** |
+| Registros de evidencia | **368,508** |
 | Instantáneas de fuentes | **8** |
 | Tamaño SQLite | **66.5 MiB** |
 | SQLite comprimido | **17.0 MiB** |
@@ -40,23 +40,23 @@ Son métricas diferentes y no deben sumarse como títulos o escenas. Los interva
 
 | Indicador | Valor |
 | --- | ---: |
-| Mediana | **0.585 ms** |
-| p95 | **0.655 ms** |
-| p99 | **0.803 ms** |
-| Consultas secuenciales/s | **1,680** |
+| Mediana | **0.582 ms** |
+| p95 | **0.631 ms** |
+| p99 | **0.655 ms** |
+| Consultas secuenciales/s | **1,703** |
 
 **Intervalos de consenso**
 
 | Indicador | Valor |
 | --- | ---: |
 | Mediana | **0.540 ms** |
-| p95 | **0.569 ms** |
-| p99 | **0.593 ms** |
-| Consultas secuenciales/s | **1,846** |
+| p95 | **0.568 ms** |
+| p99 | **0.649 ms** |
+| Consultas secuenciales/s | **1,843** |
 
 Consultas secuenciales con caché caliente sobre SQLite publicada, Linux / Python 3.12; 250 episodios × 2 rondas. No representan latencia de red/API.
 
-Versión de referencia: **2026-11-15**, [v2026.11.15.31](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.15.31). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Versión de referencia: **2026-11-16**, [v2026.11.16.32](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.16.32). [Manifiesto actual](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
