@@ -17,22 +17,22 @@ A standalone tool and SQLite dataset for anime episode skip intervals: openings,
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Database at a glance
 
-**59,126 normalized episodes · 245,158 mapped intervals · 135,117 consensus intervals**
+**59,185 normalized episodes · 248,134 mapped intervals · 135,223 consensus intervals**
 
 These are separate metrics and must not be added as unique anime or scenes. Source-only observations are accessible but are not counted as normalized episodes.
 
 | Metric | Value |
 | --- | ---: |
-| AMDB titles with timestamp data | **4,690** |
-| Normalized episodes | **59,126** |
-| Mapped source intervals | **245,158** |
-| Unresolved source-only intervals | **81,375** |
-| Consensus intervals | **135,117** |
-| Consensus evidence memberships | **217,838** |
-| Evidence records | **368,508** |
+| AMDB titles with timestamp data | **4,694** |
+| Normalized episodes | **59,185** |
+| Mapped source intervals | **248,134** |
+| Unresolved source-only intervals | **81,529** |
+| Consensus intervals | **135,223** |
+| Consensus evidence memberships | **220,821** |
+| Evidence records | **371,978** |
 | Input snapshots | **8** |
-| Runtime SQLite size | **66.5 MiB** |
-| Compressed SQLite size | **17.0 MiB** |
+| Runtime SQLite size | **67.0 MiB** |
+| Compressed SQLite size | **17.2 MiB** |
 
 ### Local lookup performance
 
@@ -40,23 +40,23 @@ These are separate metrics and must not be added as unique anime or scenes. Sour
 
 | Metric | Value |
 | --- | ---: |
-| Median | **0.582 ms** |
-| p95 | **0.631 ms** |
-| p99 | **0.655 ms** |
-| Sequential queries/s | **1,703** |
+| Median | **0.584 ms** |
+| p95 | **0.638 ms** |
+| p99 | **0.700 ms** |
+| Sequential queries/s | **1,694** |
 
 **Consensus intervals**
 
 | Metric | Value |
 | --- | ---: |
-| Median | **0.540 ms** |
+| Median | **0.544 ms** |
 | p95 | **0.568 ms** |
-| p99 | **0.649 ms** |
-| Sequential queries/s | **1,843** |
+| p99 | **0.593 ms** |
+| Sequential queries/s | **1,834** |
 
 Warm-cache sequential read-only queries on released SQLite, Linux / Python 3.12; 250 sampled episodes × 2 rounds. These are local lookup measurements, not network/API latency.
 
-Release snapshot: **2026-11-16**, [v2026.11.16.32](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.16.32). [Current release manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Release snapshot: **2026-11-17**, [v2026.11.17.33](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.17.33). [Current release manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
