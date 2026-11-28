@@ -17,22 +17,22 @@ Strumento indipendente e database SQLite di segmenti saltabili degli episodi ani
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Il database in numeri
 
-**61,181 episodi normalizzati · 266,234 intervalli · 139,631 consensi**
+**61,191 episodi normalizzati · 267,968 intervalli · 139,665 consensi**
 
 Sono metriche diverse, da non sommare come titoli o scene. Gli intervalli nativi non risolti sono consultabili ma non contano come episodi normalizzati.
 
 | Indicatore | Valore |
 | --- | ---: |
-| Titoli AMDB con intervalli | **4,807** |
-| Episodi normalizzati | **61,181** |
-| Intervalli associati | **266,234** |
+| Titoli AMDB con intervalli | **4,808** |
+| Episodi normalizzati | **61,191** |
+| Intervalli associati | **267,968** |
 | Intervalli nativi non risolti | **81,675** |
-| Intervalli di consenso | **139,631** |
-| Collegamenti del consenso | **238,912** |
-| Record di prova | **391,602** |
+| Intervalli di consenso | **139,665** |
+| Collegamenti del consenso | **240,646** |
+| Record di prova | **393,365** |
 | Snapshot delle fonti | **8** |
-| Dimensione SQLite | **70.5 MiB** |
-| SQLite compresso | **18.2 MiB** |
+| Dimensione SQLite | **70.8 MiB** |
+| SQLite compresso | **18.3 MiB** |
 
 ### Prestazioni delle query locali
 
@@ -41,22 +41,22 @@ Sono metriche diverse, da non sommare come titoli o scene. Gli intervalli nativi
 | Indicatore | Valore |
 | --- | ---: |
 | Mediana | **0.782 ms** |
-| p95 | **0.867 ms** |
-| p99 | **0.927 ms** |
-| Query sequenziali/s | **1,258** |
+| p95 | **0.862 ms** |
+| p99 | **0.928 ms** |
+| Query sequenziali/s | **1,262** |
 
 **Intervalli di consenso**
 
 | Indicatore | Valore |
 | --- | ---: |
-| Mediana | **0.733 ms** |
-| p95 | **0.764 ms** |
-| p99 | **0.782 ms** |
-| Query sequenziali/s | **1,358** |
+| Mediana | **0.731 ms** |
+| p95 | **0.768 ms** |
+| p99 | **0.817 ms** |
+| Query sequenziali/s | **1,361** |
 
 Query sequenziali con cache calda sulla SQLite pubblicata, Linux / Python 3.12; 250 episodi × 2 round. Non misura la latenza API.
 
-Snapshot della release: **2026-11-27**, [v2026.11.27.43](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.27.43). [Manifest attuale](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Snapshot della release: **2026-11-28**, [v2026.11.28.44](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.28.44). [Manifest attuale](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 

@@ -17,22 +17,22 @@ Outil autonome et base SQLite d'intervalles à ignorer dans les épisodes d'anim
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## La base en chiffres
 
-**61,181 épisodes normalisés · 266,234 intervalles · 139,631 consensus**
+**61,191 épisodes normalisés · 267,968 intervalles · 139,665 consensus**
 
 Ces nombres mesurent des choses différentes et ne se cumulent pas comme des titres. Les plages natives non résolues restent consultables mais ne sont pas comptées comme épisodes normalisés.
 
 | Indicateur | Valeur |
 | --- | ---: |
-| Titres AMDB avec intervalles | **4,807** |
-| Épisodes normalisés | **61,181** |
-| Intervalles associés | **266,234** |
+| Titres AMDB avec intervalles | **4,808** |
+| Épisodes normalisés | **61,191** |
+| Intervalles associés | **267,968** |
 | Plages non résolues | **81,675** |
-| Intervalles de consensus | **139,631** |
-| Membres des consensus | **238,912** |
-| Enregistrements de preuves | **391,602** |
+| Intervalles de consensus | **139,665** |
+| Membres des consensus | **240,646** |
+| Enregistrements de preuves | **393,365** |
 | Snapshots de sources | **8** |
-| Taille SQLite | **70.5 MiB** |
-| SQLite compressée | **18.2 MiB** |
+| Taille SQLite | **70.8 MiB** |
+| SQLite compressée | **18.3 MiB** |
 
 ### Performance des recherches locales
 
@@ -41,22 +41,22 @@ Ces nombres mesurent des choses différentes et ne se cumulent pas comme des tit
 | Indicateur | Valeur |
 | --- | ---: |
 | Médiane | **0.782 ms** |
-| p95 | **0.867 ms** |
-| p99 | **0.927 ms** |
-| Requêtes séquentielles/s | **1,258** |
+| p95 | **0.862 ms** |
+| p99 | **0.928 ms** |
+| Requêtes séquentielles/s | **1,262** |
 
 **Intervalles de consensus**
 
 | Indicateur | Valeur |
 | --- | ---: |
-| Médiane | **0.733 ms** |
-| p95 | **0.764 ms** |
-| p99 | **0.782 ms** |
-| Requêtes séquentielles/s | **1,358** |
+| Médiane | **0.731 ms** |
+| p95 | **0.768 ms** |
+| p99 | **0.817 ms** |
+| Requêtes séquentielles/s | **1,361** |
 
 Lectures séquentielles sur SQLite publiée avec cache chaud, Linux / Python 3.12 ; 250 épisodes × 2 tours. Ce n'est pas la latence réseau/API.
 
-Instantané de version: **2026-11-27**, [v2026.11.27.43](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.27.43). [Manifeste actuel](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Instantané de version: **2026-11-28**, [v2026.11.28.44](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.28.44). [Manifeste actuel](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 

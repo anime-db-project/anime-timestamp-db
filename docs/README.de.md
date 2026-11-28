@@ -17,22 +17,22 @@ Ein eigenständiges SQLite-Projekt für überspringbare Anime-Segmente wie Openi
 <!-- BEGIN AUTO-GENERATED DATABASE STATS -->
 ## Datenbank in Zahlen
 
-**61,181 normalisierte Folgen · 266,234 zugeordnete Intervalle · 139,631 Konsensintervalle**
+**61,191 normalisierte Folgen · 267,968 zugeordnete Intervalle · 139,665 Konsensintervalle**
 
 Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene Bereiche bleiben abrufbar, gelten aber nicht als normalisierte Episoden.
 
 | Kennzahl | Wert |
 | --- | ---: |
-| AMDB-Titel mit Zeitstempeln | **4,807** |
-| Normalisierte Folgen | **61,181** |
-| Zugeordnete Intervalle | **266,234** |
+| AMDB-Titel mit Zeitstempeln | **4,808** |
+| Normalisierte Folgen | **61,191** |
+| Zugeordnete Intervalle | **267,968** |
 | Quelleneigene Intervalle | **81,675** |
-| Konsensintervalle | **139,631** |
-| Konsensmitgliedschaften | **238,912** |
-| Evidenzrecords | **391,602** |
+| Konsensintervalle | **139,665** |
+| Konsensmitgliedschaften | **240,646** |
+| Evidenzrecords | **393,365** |
 | Quell-Snapshots | **8** |
-| SQLite-Größe | **70.5 MiB** |
-| Komprimierte SQLite-Größe | **18.2 MiB** |
+| SQLite-Größe | **70.8 MiB** |
+| Komprimierte SQLite-Größe | **18.3 MiB** |
 
 ### Lokale Abfrageleistung
 
@@ -41,22 +41,22 @@ Dies sind separate Kennzahlen und keine addierbaren Titelzahlen. Quelleneigene B
 | Kennzahl | Wert |
 | --- | ---: |
 | Median | **0.782 ms** |
-| p95 | **0.867 ms** |
-| p99 | **0.927 ms** |
-| Sequentielle Abfragen/s | **1,258** |
+| p95 | **0.862 ms** |
+| p99 | **0.928 ms** |
+| Sequentielle Abfragen/s | **1,262** |
 
 **Konsensintervalle**
 
 | Kennzahl | Wert |
 | --- | ---: |
-| Median | **0.733 ms** |
-| p95 | **0.764 ms** |
-| p99 | **0.782 ms** |
-| Sequentielle Abfragen/s | **1,358** |
+| Median | **0.731 ms** |
+| p95 | **0.768 ms** |
+| p99 | **0.817 ms** |
+| Sequentielle Abfragen/s | **1,361** |
 
 Sequentielle Abfragen auf Release-SQLite mit warmem Cache, Linux / Python 3.12; 250 Folgen × 2 Runden. Keine API-/Netzwerklatenz.
 
-Release-Snapshot: **2026-11-27**, [v2026.11.27.43](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.27.43). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
+Release-Snapshot: **2026-11-28**, [v2026.11.28.44](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.28.44). [Aktuelles Manifest](https://github.com/anime-db-project/anime-timestamp-db/releases/latest/download/manifest.json).
 
 <!-- END AUTO-GENERATED DATABASE STATS -->
 
